@@ -2,7 +2,7 @@
  * Hardiansyah Fam - ATM Problem Ticketing System
  * File: Code.gs
  * Fungsi: Master Backend Controller, Web App Entry Point, User Authentication,
- *         Routing getSectionData, dan Integrasi Modul Ekstensi.
+ *         Routing getSectionData, Telemetri Personal FSE & Verifikasi Dokumen.
  */
 
 function doGet(e) {
@@ -20,7 +20,7 @@ function doGet(e) {
     .evaluate()
     .setTitle('ATM Ticketing System - Hardiansyah Fam')
     .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL)
-    .addMetaTag('viewport', 'width=device-width, initial-scale=1.0');
+    .addMetaTag('viewport', 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no');
 }
 
 function include(filename) {
@@ -56,7 +56,6 @@ function findSheet(ss, possibleNames) {
     }
   }
 
-  // 1. Exact match (Case-Insensitive)
   for (var i = 0; i < sheets.length; i++) {
     var name = sheets[i].getName().trim().toLowerCase();
     if (!isLookingForCounter && name.indexOf('counter') !== -1) continue;
@@ -67,7 +66,6 @@ function findSheet(ss, possibleNames) {
     }
   }
 
-  // 2. Substring match
   for (var k = 0; k < sheets.length; k++) {
     var sName = sheets[k].getName().trim().toLowerCase();
     if (!isLookingForCounter && sName.indexOf('counter') !== -1) continue;
@@ -100,45 +98,14 @@ function findTicketsSheet(ss) {
     var name = sheets[i].getName().trim().toLowerCase();
     if (name.indexOf('counter') !== -1) continue;
     for (var j = 0; j < ticketNames.length; j++) {
-      if (name === ticketNames[j]) {
-        return sheets[i];
-      }
+      if (name === ticketNames[j]) return sheets[i];
     }
   }
 
   for (var k = 0; k < sheets.length; k++) {
     var sName = sheets[k].getName().trim().toLowerCase();
-    if (sName.indexOf('counter') !== -1) continue;
-    if (sName === 'sheet1' || sName === 'sheet 1') continue;
-    if (sName.indexOf('tiket') !== -1 || sName.indexOf('ticket') !== -1) {
-      return sheets[k];
-    }
-  }
-
-  for (var m = 0; m < sheets.length; m++) {
-    var sh = sheets[m];
-    var shName = sh.getName().trim().toLowerCase();
-    if (shName.indexOf('counter') !== -1) continue;
-    if (sh.getLastRow() > 0 && sh.getLastColumn() > 0) {
-      var maxCols = Math.min(sh.getLastColumn(), 20);
-      var headerVals = sh.getRange(1, 1, 1, maxCols).getDisplayValues()[0];
-      var headerJoined = headerVals.join(' ').toLowerCase();
-      if (
-        headerJoined.indexOf('problem') !== -1 || 
-        headerJoined.indexOf('keluhan') !== -1 || 
-        headerJoined.indexOf('kendala') !== -1 ||
-        headerJoined.indexOf('masalah') !== -1 ||
-        (headerJoined.indexOf('bank') !== -1 && (headerJoined.indexOf('tiket') !== -1 || headerJoined.indexOf('ticket') !== -1 || headerJoined.indexOf('sn') !== -1))
-      ) {
-        return sh;
-      }
-    }
-  }
-
-  for (var n = 0; n < sheets.length; n++) {
-    if (sheets[n].getName().trim().toLowerCase().indexOf('counter') === -1) {
-      return sheets[n];
-    }
+    if (sName.indexOf('counter') !== -1 || sName === 'sheet1') continue;
+    if (sName.indexOf('tiket') !== -1 || sName.indexOf('ticket') !== -1) return sheets[k];
   }
 
   return sheets[0];
@@ -195,10 +162,10 @@ function authenticateUser(noHp, password) {
       var h = String(headers[c] || '').toLowerCase().replace(/[^a-z0-9]/g, '');
       if (h === 'userid' || h === 'id') colMap.id = c;
       else if (h === 'namalengkap' || h === 'nama') colMap.nama = c;
-      else if (h === 'nohp' || h === 'hp' || h === 'phone' || h === 'telepon') colMap.noHp = c;
-      else if (h === 'password' || h === 'pass' || h === 'katasandi') colMap.pass = c;
-      else if (h === 'role' || h === 'peran' || h === 'tipe') colMap.role = c;
-      else if (h === 'wilayahtugas' || h === 'wilayah' || h === 'area') colMap.wilayah = c;
+      else if (h === 'nohp' || h === 'hp') colMap.noHp = c;
+      else if (h === 'password' || h === 'pass') colMap.pass = c;
+      else if (h === 'role' || h === 'peran') colMap.role = c;
+      else if (h === 'wilayahtugas' || h === 'wilayah') colMap.wilayah = c;
       else if (h === 'statusakun' || h === 'status') colMap.status = c;
     }
 
@@ -217,7 +184,7 @@ function authenticateUser(noHp, password) {
         var roleRaw = String(row[colMap.role] || 'Monitoring').trim();
         var normalizedRole = 'monitoring';
         if (roleRaw.toLowerCase().indexOf('admin') !== -1) normalizedRole = 'admin';
-        else if (roleRaw.toLowerCase().indexOf('fse') !== -1 || roleRaw.toLowerCase().indexOf('engineer') !== -1 || roleRaw.toLowerCase().indexOf('teknisi') !== -1) normalizedRole = 'fse';
+        else if (roleRaw.toLowerCase().indexOf('fse') !== -1 || roleRaw.toLowerCase().indexOf('engineer') !== -1) normalizedRole = 'fse';
         else normalizedRole = 'monitoring';
 
         var roleTitles = { admin: 'System Administrator', monitoring: 'Monitoring Officer', fse: 'Field Service Engineer' };
@@ -247,6 +214,122 @@ function authenticateUser(noHp, password) {
   }
 }
 
+function getFSEPersonalSummary(fseName, fseUserId) {
+  try {
+    var ss = getSpreadsheet();
+    if (!ss) return { status: 'error', message: 'Spreadsheet tidak dapat diakses' };
+
+    var now = new Date();
+    var currentMonth = Utilities.formatDate(now, 'Asia/Jakarta', 'yyyy-MM');
+    var targetName = String(fseName || '').toLowerCase().trim();
+
+    // 1. Ambil jumlah kelolaan mesin dari sheet FSE
+    var fseSheet = findSheet(ss, ['FSE', 'Data_FSE', 'Master_FSE']);
+    var jumlahMesin = 5;
+    var wilayahFSE = 'Jabodetabek';
+
+    if (fseSheet && fseSheet.getLastRow() > 1) {
+      var fData = fseSheet.getRange(2, 1, fseSheet.getLastRow() - 1, fseSheet.getLastColumn()).getDisplayValues();
+      for (var f = 0; f < fData.length; f++) {
+        var uId = String(fData[f][0] || '').trim();
+        var uName = String(fData[f][1] || '').toLowerCase().trim();
+        if ((fseUserId && uId === fseUserId) || (targetName && uName === targetName)) {
+          wilayahFSE = String(fData[f][5] || 'Jabodetabek');
+          jumlahMesin = parseInt(fData[f][7], 10) || 0;
+          break;
+        }
+      }
+    }
+
+    // 2. Ambil tiket CM dari sheet Tickets (bulan ini & list aktif)
+    var ticketSheet = findTicketsSheet(ss);
+    var totalCM = 0;
+    var assignedTickets = [];
+    var closedDocuments = [];
+
+    if (ticketSheet && ticketSheet.getLastRow() > 1) {
+      var tRows = ticketSheet.getRange(2, 1, ticketSheet.getLastRow() - 1, Math.max(ticketSheet.getLastColumn(), 16)).getDisplayValues();
+      for (var t = 0; t < tRows.length; t++) {
+        var row = tRows[t];
+        var idTiket = String(row[0] || '').trim();
+        var bank = String(row[1] || '').trim();
+        var sn = String(row[2] || '').trim();
+        var idMesin = String(row[3] || '').trim();
+        var tgl = String(row[4] || '').trim();
+        var jam = String(row[5] || '').trim();
+        var tipe = String(row[6] || '').trim();
+        var eng = String(row[7] || '').toLowerCase().trim();
+        var prob = String(row[8] || '').trim();
+        var note = String(row[9] || '').trim();
+        var status = String(row[10] || 'Open').trim();
+        var closedAt = String(row[12] || '').trim();
+        var hardcopyStatus = String(row[13] || 'Belum Dikirim').trim();
+        var hardcopyRecAt = String(row[14] || '').trim();
+        var hardcopyRecBy = String(row[15] || '').trim();
+
+        if (targetName && (eng.indexOf(targetName) !== -1 || targetName.indexOf(eng) !== -1)) {
+          var isCM = (tipe.toLowerCase().indexOf('cm') !== -1 || tipe.toLowerCase().indexOf('corrective') !== -1);
+          var isThisMonth = (tgl.indexOf(currentMonth) === 0 || tgl.indexOf(currentMonth.replace('-', '/')) === 0);
+          if (isCM && isThisMonth) totalCM++;
+
+          var ticketObj = {
+            idTiket: idTiket, bank: bank, serialNumber: sn, idMesin: idMesin,
+            tanggalTiket: tgl, jamTiket: jam, tipeTiket: tipe, namaEngineer: row[7],
+            problem: prob, note: note, statusTiket: status,
+            closedAt: closedAt, hardcopyStatus: hardcopyStatus,
+            hardcopyReceivedAt: hardcopyRecAt, hardcopyReceivedBy: hardcopyRecBy
+          };
+
+          if (status.toLowerCase() === 'closed') {
+            closedDocuments.push(ticketObj);
+          } else {
+            assignedTickets.push(ticketObj);
+          }
+        }
+      }
+    }
+
+    // 3. Ambil jadwal PM FSE bulan ini dari sheet Data_PM
+    var pmSheet = findSheet(ss, ['Data_PM', 'Data PM', 'DataPM', 'PM']);
+    var totalPMTarget = 0;
+    var totalPMDone = 0;
+
+    if (pmSheet && pmSheet.getLastRow() > 1) {
+      var pmRows = pmSheet.getRange(2, 1, pmSheet.getLastRow() - 1, Math.max(pmSheet.getLastColumn(), 10)).getDisplayValues();
+      for (var p = 0; p < pmRows.length; p++) {
+        var pr = pmRows[p];
+        var pEng = String(pr[8] || '').toLowerCase().trim(); // Engineer PIC
+        var pStat = String(pr[9] || '').toLowerCase().trim();
+        var pTgl = String(pr[6] || '');
+
+        if (targetName && (pEng.indexOf(targetName) !== -1 || targetName.indexOf(pEng) !== -1)) {
+          if (pTgl.indexOf(currentMonth) === 0) {
+            totalPMTarget++;
+            if (pStat === 'completed' || pStat === 'selesai') totalPMDone++;
+          }
+        }
+      }
+    }
+
+    assignedTickets.reverse();
+    closedDocuments.reverse();
+
+    return {
+      status: 'success',
+      data: {
+        wilayah: wilayahFSE,
+        jumlahMesin: jumlahMesin,
+        totalCM: totalCM,
+        totalPM: totalPMTarget > 0 ? (totalPMDone + '/' + totalPMTarget) : '0',
+        assignedTickets: assignedTickets,
+        closedDocuments: closedDocuments
+      }
+    };
+  } catch (err) {
+    return { status: 'error', message: err.toString() };
+  }
+}
+
 function getDropdownData() {
   try {
     var custRes = getCustomersData();
@@ -257,18 +340,7 @@ function getDropdownData() {
     var banks = [];
     for (var i = 0; i < custList.length; i++) {
       var bName = custList[i].namaBank;
-      if (bName && banks.indexOf(bName) === -1) {
-        banks.push(bName);
-      }
-    }
-
-    if (banks.length === 0 && machRes && machRes.data) {
-      for (var j = 0; j < machRes.data.length; j++) {
-        var mBank = machRes.data[j].bank;
-        if (mBank && banks.indexOf(mBank) === -1) {
-          banks.push(mBank);
-        }
-      }
+      if (bName && banks.indexOf(bName) === -1) banks.push(bName);
     }
 
     return {
@@ -286,24 +358,12 @@ function getDropdownData() {
 
 function getSectionData(sectionName) {
   try {
-    if (sectionName === 'FSE') {
-      return getFSEData();
-    }
-    if (sectionName === 'DatabaseMesin') {
-      return getMachinesData();
-    }
-    if (sectionName === 'DatabaseCustomer') {
-      return getCustomersData();
-    }
-    if (sectionName === 'DashboardMetrics') {
-      return getDashboardMetrics();
-    }
-    if (sectionName === 'ReportingFSE') {
-      return getFSEReportingData();
-    }
-    if (sectionName === 'DataPM') {
-      return getPMData();
-    }
+    if (sectionName === 'FSE') return getFSEData();
+    if (sectionName === 'DatabaseMesin') return getMachinesData();
+    if (sectionName === 'DatabaseCustomer') return getCustomersData();
+    if (sectionName === 'DashboardMetrics') return getDashboardMetrics();
+    if (sectionName === 'ReportingFSE') return getFSEReportingData();
+    if (sectionName === 'DataPM') return getPMData();
     return { status: 'error', message: 'Seksi [' + sectionName + '] tidak dikenali' };
   } catch (err) {
     return { status: 'error', message: err.toString() };

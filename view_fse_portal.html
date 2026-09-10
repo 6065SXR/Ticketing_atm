@@ -1,0 +1,175 @@
+<!-- ========================================================
+     MOBILE-FIRST DEDICATED VIEWPORT FOR FSE (FIELD SERVICE ENGINEER)
+     Navigasi Bottom Navbar: Dashboard | Ticket | Kirim Dokumen
+     ======================================================== -->
+<div id="fse-mobile-viewport" class="w-full max-w-md mx-auto min-h-screen flex flex-col justify-between pb-24 relative hidden text-slate-800">
+
+  <!-- TOP APP BAR FSE -->
+  <header class="sticky top-0 z-30 frosted-glass-slab !rounded-b-2xl !rounded-t-none px-4 py-3 border-b border-white/80 shadow-md">
+    <div class="flex items-center justify-between">
+      <div class="flex items-center gap-2.5">
+        <div class="w-9 h-9 rounded-xl bg-teal-600/10 border border-teal-500/20 flex items-center justify-center text-teal-700 shadow-sm">
+          <i class="fa-solid fa-user-gear text-sm"></i>
+        </div>
+        <div>
+          <div class="flex items-center gap-1.5">
+            <span class="font-extrabold text-xs tracking-tight text-slate-900">HARDIANSYAH <span class="text-teal-600">FAM</span></span>
+            <span class="text-[9px] px-1.5 py-0.2 bg-teal-100 text-teal-800 font-bold rounded font-mono">FSE</span>
+          </div>
+          <p id="fse-bar-name" class="text-[11px] font-semibold text-slate-700 truncate max-w-[170px] leading-tight">Teknisi Lapangan</p>
+        </div>
+      </div>
+
+      <div class="flex items-center gap-2">
+        <div class="text-[10px] font-mono text-teal-700 bg-teal-50 px-2 py-1 rounded-lg border border-teal-200" id="fse-live-clock">
+          --:-- WIB
+        </div>
+        <button onclick="handleLogout()" title="Keluar Akun" class="w-8 h-8 rounded-xl bg-white border border-slate-200 text-slate-500 hover:text-rose-600 hover:bg-rose-50 flex items-center justify-center transition shadow-sm">
+          <i class="fa-solid fa-arrow-right-from-bracket text-xs"></i>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- MAIN SCROLLABLE CONTENT AREA -->
+  <main class="flex-1 p-3.5 space-y-4">
+
+    <!-- SUBVIEW 1: FSE DASHBOARD -->
+    <section id="fse-view-dashboard" class="fse-subview space-y-3.5">
+      
+      <!-- Greeting Banner -->
+      <div class="soft-card-panel p-4 bg-gradient-to-br from-teal-700 to-teal-900 !text-white rounded-2xl shadow-lg relative overflow-hidden">
+        <div class="relative z-10">
+          <p class="text-[11px] text-teal-200 uppercase tracking-wider font-semibold">Field Service Telemetry</p>
+          <h2 id="fse-hero-greeting" class="text-base font-extrabold mt-0.5">Semangat Pagi!</h2>
+          <p id="fse-hero-wilayah" class="text-xs text-teal-100 mt-1 flex items-center gap-1.5">
+            <i class="fa-solid fa-location-dot text-emerald-300"></i>
+            <span>Area Tugas: DKI Jakarta</span>
+          </p>
+        </div>
+        <i class="fa-solid fa-screwdriver-wrench absolute right-3 -bottom-2 text-white/10 text-6xl pointer-events-none"></i>
+      </div>
+
+      <!-- 3 Metrics Card (Kelolaan Mesin, Total CM Sebulan, Total PM Sebulan) -->
+      <div class="grid grid-cols-3 gap-2.5">
+        
+        <!-- Card 1: Kelolaan Mesin -->
+        <div class="soft-card-panel p-3 text-center rounded-2xl flex flex-col justify-between">
+          <div class="w-7 h-7 mx-auto rounded-lg bg-teal-50 text-teal-700 flex items-center justify-center text-xs mb-1">
+            <i class="fa-solid fa-server"></i>
+          </div>
+          <div id="fse-stat-mesin" class="text-lg font-mono font-extrabold text-slate-800">0</div>
+          <div class="text-[10px] text-slate-500 font-medium leading-tight">Kelolaan Mesin</div>
+        </div>
+
+        <!-- Card 2: Total CM Sebulan -->
+        <div class="soft-card-panel p-3 text-center rounded-2xl flex flex-col justify-between">
+          <div class="w-7 h-7 mx-auto rounded-lg bg-rose-50 text-rose-600 flex items-center justify-center text-xs mb-1">
+            <i class="fa-solid fa-triangle-exclamation"></i>
+          </div>
+          <div id="fse-stat-cm" class="text-lg font-mono font-extrabold text-rose-600">0</div>
+          <div class="text-[10px] text-slate-500 font-medium leading-tight">CM (Bln Ini)</div>
+        </div>
+
+        <!-- Card 3: Total PM Sebulan -->
+        <div class="soft-card-panel p-3 text-center rounded-2xl flex flex-col justify-between">
+          <div class="w-7 h-7 mx-auto rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center text-xs mb-1">
+            <i class="fa-solid fa-calendar-check"></i>
+          </div>
+          <div id="fse-stat-pm" class="text-lg font-mono font-extrabold text-emerald-700">0</div>
+          <div class="text-[10px] text-slate-500 font-medium leading-tight">PM (Bln Ini)</div>
+        </div>
+
+      </div>
+
+      <!-- Quick Action Jump to Tickets -->
+      <div class="soft-card-panel p-3.5 rounded-2xl flex items-center justify-between">
+        <div>
+          <h4 class="text-xs font-bold text-slate-800">Antrean Tiket Perbaikan</h4>
+          <p class="text-[10px] text-slate-500">Perbarui respon dan progres pengerjaan di lokasi</p>
+        </div>
+        <button onclick="switchFSETab('tickets')" class="soft-btn-primary px-3 py-1.5 text-xs rounded-xl font-semibold flex items-center gap-1">
+          <span>Buka Tiket</span>
+          <i class="fa-solid fa-chevron-right text-[10px]"></i>
+        </button>
+      </div>
+
+    </section>
+
+    <!-- SUBVIEW 2: FSE TICKET MANAGEMENT -->
+    <section id="fse-view-tickets" class="fse-subview space-y-3 hidden">
+      
+      <div class="flex items-center justify-between pb-1 border-b border-slate-200">
+        <div>
+          <h3 class="font-bold text-xs text-slate-800 flex items-center gap-1.5">
+            <i class="fa-solid fa-ticket text-teal-600"></i>
+            <span>Tiket Penugasan Saya</span>
+          </h3>
+          <p class="text-[10px] text-slate-500">Update status lifecycle penanganan teknisi</p>
+        </div>
+        <button onclick="loadFSEPortalData()" title="Segarkan Data" class="text-[11px] text-teal-700 p-1.5 hover:bg-teal-50 rounded-lg">
+          <i class="fa-solid fa-arrows-rotate"></i>
+        </button>
+      </div>
+
+      <!-- Ticket Cards List -->
+      <div id="fse-ticket-cards-container" class="space-y-3">
+        <div class="text-center py-10 text-slate-400 text-xs">
+          <i class="fa-solid fa-spinner fa-spin text-teal-600 text-xl mb-2 block"></i>
+          Memuat antrean tiket penugasan...
+        </div>
+      </div>
+
+    </section>
+
+    <!-- SUBVIEW 3: FSE KIRIM DOKUMEN -->
+    <section id="fse-view-documents" class="fse-subview space-y-3 hidden">
+      
+      <div class="pb-1 border-b border-slate-200">
+        <h3 class="font-bold text-xs text-slate-800 flex items-center gap-1.5">
+          <i class="fa-solid fa-file-invoice text-teal-600"></i>
+          <span>Pengiriman Dokumen Hardcopy (Tiket Closed)</span>
+        </h3>
+        <p class="text-[10px] text-slate-500 mt-0.5">
+          SLA Pengiriman: <span class="font-semibold text-slate-700">Maksimal 3 Hari</span> (Jabodetabek) | <span class="font-semibold text-slate-700">7 Hari</span> (Luar Jabodetabek)
+        </p>
+      </div>
+
+      <!-- Closed Document List Container -->
+      <div id="fse-document-cards-container" class="space-y-3">
+        <div class="text-center py-10 text-slate-400 text-xs">
+          <i class="fa-solid fa-spinner fa-spin text-teal-600 text-xl mb-2 block"></i>
+          Memeriksa tiket yang berstatus Closed...
+        </div>
+      </div>
+
+    </section>
+
+  </main>
+
+  <!-- BOTTOM NAVBAR (STICKY BOTTOM) -->
+  <nav class="fixed bottom-0 left-0 right-0 max-w-md mx-auto frosted-glass-slab !rounded-t-2xl !rounded-b-none border-t border-white/90 p-2 z-40 flex items-center justify-around shadow-2xl bg-white/90">
+    
+    <!-- Tab 1: Dashboard -->
+    <button id="fse-nav-dashboard" onclick="switchFSETab('dashboard')" class="fse-bottom-btn active flex-1 py-1 flex flex-col items-center gap-0.5 text-teal-700 font-semibold transition">
+      <i class="fa-solid fa-gauge-high text-base"></i>
+      <span class="text-[10px]">Dashboard</span>
+    </button>
+
+    <!-- Tab 2: Ticket -->
+    <button id="fse-nav-tickets" onclick="switchFSETab('tickets')" class="fse-bottom-btn flex-1 py-1 flex flex-col items-center gap-0.5 text-slate-400 hover:text-teal-700 font-medium transition relative">
+      <i class="fa-solid fa-ticket text-base"></i>
+      <span class="text-[10px]">Ticket</span>
+      <span id="fse-ticket-count-badge" class="absolute top-0 right-7 w-2 h-2 rounded-full bg-rose-500 hidden"></span>
+    </button>
+
+    <!-- Tab 3: Kirim Dokumen -->
+    <button id="fse-nav-documents" onclick="switchFSETab('documents')" class="fse-bottom-btn flex-1 py-1 flex flex-col items-center gap-0.5 text-slate-400 hover:text-teal-700 font-medium transition relative">
+      <i class="fa-solid fa-file-invoice text-base"></i>
+      <span class="text-[10px]">Kirim Dokumen</span>
+      <span id="fse-doc-alert-badge" class="absolute top-0 right-5 w-2 h-2 rounded-full bg-amber-500 hidden"></span>
+    </button>
+
+  </nav>
+
+</div>

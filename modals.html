@@ -263,15 +263,17 @@
           <option value="Respon">Respon (Monitoring acknowledgement)</option>
           <option value="Appointment">Appointment (Jadwal ke Lokasi)</option>
           <option value="Handling">Handling (FSE sedang di lokasi)</option>
-          <option value="Solving">Solving (Masalah selesai diatasi)</option>
+          <option value="Re-Appointment">Re-Appointment (Janjian ulang setelah ambil spare part)</option>
           <option value="Take a Part">Take a Part (Pergantian sparepart ATM)</option>
+          <option value="Solving">Solving (Masalah selesai diatasi FSE)</option>
+          <option value="Closed">Closed (Verifikasi Monitoring & Wajib Kirim Dokumen)</option>
           <option value="Cancel">Cancel (Batalkan tiket)</option>
         </select>
       </div>
 
       <div>
         <label class="block text-slate-700 font-semibold mb-1">Catatan Tambahan (Opsional)</label>
-        <textarea id="input-status-note" rows="2" placeholder="Keterangan perbaikan atau sparepart..." class="soft-input w-full px-3 py-2 rounded-xl"></textarea>
+        <textarea id="input-status-note" rows="2" placeholder="Keterangan perbaikan, jadwal appointment, atau sparepart..." class="soft-input w-full px-3 py-2 rounded-xl"></textarea>
       </div>
 
       <div class="flex items-center justify-end gap-3 pt-3">
@@ -282,6 +284,63 @@
           Simpan Perubahan
         </button>
       </div>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: RE-APPOINTMENT MODAL (FSE JADWAL ULANG DENGAN PIC) -->
+<div id="modal-reappointment" class="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4 z-50 hidden">
+  <div class="bg-white/95 backdrop-blur-xl w-full max-w-sm p-5 rounded-2xl border border-white shadow-2xl relative text-xs">
+    <div class="flex items-center gap-2.5 mb-3 border-b border-slate-200 pb-2.5">
+      <div class="w-8 h-8 rounded-lg bg-teal-50 text-teal-700 flex items-center justify-center">
+        <i class="fa-solid fa-calendar-plus text-sm"></i>
+      </div>
+      <div>
+        <h4 class="font-bold text-slate-800">Re-Appointment dengan PIC</h4>
+        <p class="text-[10px] text-slate-500">Jadwal ulang kunjungan setelah ambil sparepart</p>
+      </div>
+    </div>
+
+    <form onsubmit="handleReAppointmentSubmit(event)" class="space-y-3">
+      <input type="hidden" id="reappoint-ticket-id">
+      <div>
+        <label class="block text-slate-700 font-semibold mb-1">Tanggal &amp; Waktu Janjian Baru *</label>
+        <input type="datetime-local" id="reappoint-datetime" required class="soft-input w-full px-3 py-2 rounded-xl">
+      </div>
+      <div>
+        <label class="block text-slate-700 font-semibold mb-1">Nama PIC Bank / Catatan Part *</label>
+        <textarea id="reappoint-note" rows="2" required placeholder="Contoh: Sudah ambil roller feed baru, janjian kembali besok jam 09.00 dgn Bpk. Joko" class="soft-input w-full px-3 py-2 rounded-xl"></textarea>
+      </div>
+      <div class="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+        <button type="button" onclick="closeReAppointmentModal()" class="px-3 py-1.5 rounded-lg bg-slate-100 text-slate-600 font-medium">Batal</button>
+        <button type="submit" class="soft-btn-primary px-4 py-1.5 rounded-lg font-semibold">Simpan Jadwal</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- MODAL: VERIFIKASI PENERIMAAN HARDCOPY (ROLE ADMIN) -->
+<div id="modal-receive-hardcopy" class="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4 z-50 hidden">
+  <div class="bg-white/95 backdrop-blur-xl w-full max-w-sm p-5 rounded-2xl border border-white shadow-2xl relative text-xs">
+    <div class="flex items-center gap-2.5 mb-3 border-b border-slate-200 pb-2.5">
+      <div class="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-700 flex items-center justify-center">
+        <i class="fa-solid fa-file-circle-check text-sm"></i>
+      </div>
+      <div>
+        <h4 class="font-bold text-slate-800">Verifikasi Berkas Hardcopy</h4>
+        <p class="text-[10px] text-slate-500">Konfirmasi penerimaan dokumen fisik di kantor</p>
+      </div>
+    </div>
+
+    <p class="text-slate-600 mb-3">
+      Apakah Anda mengonfirmasi bahwa berkas fisik/hardcopy untuk Tiket <b id="rcv-modal-ticket-id" class="text-teal-700 font-mono"></b> sudah diterima dengan lengkap?
+    </p>
+
+    <div class="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+      <button type="button" onclick="closeReceiveHardcopyModal()" class="px-3 py-1.5 rounded-lg bg-slate-100 text-slate-600 font-medium">Batal</button>
+      <button type="button" onclick="confirmReceiveHardcopyAction()" class="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-1.5 rounded-lg font-semibold shadow-sm">
+        <i class="fa-solid fa-check mr-1"></i> File Diterima
+      </button>
     </div>
   </div>
 </div>

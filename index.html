@@ -181,17 +181,19 @@
 
   <div class="soft-studio-bg"></div>
 
-  <!-- VIEW 1: LOGIN FRAME -->
+  <!-- VIEW 1: LOGIN FRAME (SINGLE INSTANCE) -->
   <?!= include('login'); ?>
 
-  <!-- VIEW 2: MAIN SHELL -->
+  <!-- VIEW 1.5: DEDICATED MOBILE PORTAL FOR ROLE FSE -->
+  <?!= include('view_fse_portal'); ?>
+
+  <!-- VIEW 2: MAIN SHELL (MONITORING & ADMIN DESKTOP/TABLET) -->
   <div id="app-viewport" class="frosted-glass-slab w-full max-w-[1540px] flex flex-col lg:flex-row min-h-[92vh] overflow-hidden hidden">
     
     <aside id="app-sidebar" class="w-full lg:w-72 p-3 sm:p-5 flex flex-col border-b lg:border-b-0 lg:border-r border-white/60 shrink-0 bg-white/30 transition-all duration-300">
       
       <!-- Brand & Sidebar Toggle Button -->
       <div class="sidebar-header-box pb-3 lg:pb-4 mb-2 lg:mb-4 border-b border-slate-200/60 flex items-center justify-between">
-        <!-- Expanded Logo Header -->
         <div class="sidebar-header-full flex items-center gap-3">
           <div class="w-9 h-9 rounded-2xl bg-teal-600/10 border border-teal-500/20 flex items-center justify-center text-teal-700 shadow-sm shrink-0">
             <i class="fa-solid fa-server text-sm"></i>
@@ -207,14 +209,13 @@
           </div>
         </div>
 
-        <!-- Sidebar Collapse / Expand Toggle Button -->
         <button id="btn-toggle-sidebar" onclick="toggleSidebar()" title="Perluas / Perkecil Menu Sidebar" 
           class="hidden lg:flex w-8 h-8 rounded-xl bg-white/80 hover:bg-white text-slate-600 hover:text-teal-700 items-center justify-center border border-slate-200 shadow-sm transition ml-auto">
           <i id="toggle-sidebar-icon" class="fa-solid fa-bars-staggered text-xs"></i>
         </button>
       </div>
 
-      <!-- TAMPILAN MOBILE: 1 CARD HORIZONTAL SCROLL -->
+      <!-- Navigasi Menu Desktop & Mobile Slider -->
       <nav class="mobile-nav-slider flex flex-row lg:flex-col overflow-x-auto lg:overflow-x-hidden lg:overflow-y-auto gap-2 lg:gap-1.5 p-2 lg:p-0 rounded-2xl lg:rounded-none bg-white/60 lg:bg-transparent border lg:border-none border-white/80 shadow-sm lg:shadow-none shrink-0 lg:flex-1">
         <a href="javascript:void(0)" onclick="navigateTo('Dashboard')" id="nav-Dashboard" title="Dashboard" class="soft-nav-pill active flex items-center gap-2.5 lg:gap-3.5 px-3 lg:px-3.5 py-2 lg:py-2.5 text-xs font-medium shrink-0">
           <i class="fa-solid fa-gauge w-4 text-center shrink-0"></i>
@@ -228,13 +229,10 @@
           <i class="fa-solid fa-ticket w-4 text-center shrink-0"></i>
           <span class="sidebar-text truncate">Ticket</span>
         </a>
-        
-        <!-- MENU DATA PM -->
         <a href="javascript:void(0)" onclick="navigateTo('DataPM')" id="nav-DataPM" title="Data PM" class="soft-nav-pill flex items-center gap-2.5 lg:gap-3.5 px-3 lg:px-3.5 py-2 lg:py-2.5 text-xs font-medium shrink-0">
           <i class="fa-solid fa-calendar-check w-4 text-center shrink-0"></i>
           <span class="sidebar-text truncate">Data PM</span>
         </a>
-
         <a href="javascript:void(0)" onclick="navigateTo('DatabaseMesin')" id="nav-DatabaseMesin" title="Database Mesin" class="soft-nav-pill flex items-center gap-2.5 lg:gap-3.5 px-3 lg:px-3.5 py-2 lg:py-2.5 text-xs font-medium shrink-0">
           <i class="fa-solid fa-cash-register w-4 text-center shrink-0"></i>
           <span class="sidebar-text truncate">Database Mesin</span>
@@ -321,5 +319,6 @@
 
   <!-- FRONTEND SCRIPT -->
   <?!= include('javascript'); ?>
+
 </body>
 </html>

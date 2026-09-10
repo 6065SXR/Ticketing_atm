@@ -1,0 +1,29 @@
+<!-- SECTION: DATABASE MESIN -->
+<section id="sec-DatabaseMesin" class="view-section space-y-4 hidden">
+  <div class="soft-card-panel p-5">
+    <div class="flex items-center justify-between mb-4">
+      <h3 class="font-bold text-sm text-slate-800 flex items-center gap-2">
+        <i class="fa-solid fa-server text-teal-600"></i>
+        <span>Database Mesin ATM (Asset Register)</span>
+      </h3>
+      <span class="text-xs text-slate-500">Total ATM Terdaftar</span>
+    </div>
+    <div class="overflow-x-auto rounded-xl border border-slate-200 bg-white/60">
+      <table class="w-full text-left text-xs text-slate-600">
+        <thead class="text-[10px] uppercase bg-slate-100/80 text-slate-700 border-b border-slate-200">
+          <tr>
+            <th class="p-3 font-semibold">ID Mesin</th>
+            <th class="p-3 font-semibold">Serial Number</th>
+            <th class="p-3 font-semibold">Bank Pemilik</th>
+            <th class="p-3 font-semibold">Lokasi ATM</th>
+            <th class="p-3 font-semibold">Tipe / Merk</th>
+            <th class="p-3 font-semibold">Status</th>
+          </tr>
+        </thead>
+        <tbody id="machines-table-body" class="divide-y divide-slate-100">
+          <!-- Injected via JS -->
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>

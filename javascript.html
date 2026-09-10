@@ -1,4 +1,7 @@
 <script>
+  /* ========================================================
+   * GLOBAL VARIABLES & SESSION CONSTANTS
+   * ======================================================== */
   var currentSection = 'Dashboard';
   var currentPage = 1;
   var pageSize = 10;
@@ -8,6 +11,7 @@
   var isSidebarCollapsed = false;
 
   var currentUser = null;
+  var currentFSETab = 'dashboard';
 
   var cachedDropdowns = {
     banks: [],
@@ -19,10 +23,91 @@
   var currentPMList = [];
   var currentFSEList = [];
   var activeActionTicketId = null;
+  var activeReceiveTicketId = null;
+
+  // Konstanta Inactivity 2 Jam = 2 * 60 * 60 * 1000 ms
+  var TWO_HOURS_MS = 2 * 60 * 60 * 1000;
+  var SESSION_STORAGE_KEY = 'ATM_TICKET_ACTIVE_USER';
+  var LAST_ACTIVITY_KEY = 'ATM_TICKET_LAST_ACTIVITY_TS';
 
   window.onload = function() {
     startLiveClock();
+    initSessionAndInactivityTracker();
   };
+
+  function startLiveClock() {
+    setInterval(function() {
+      var now = new Date();
+      var h = ('0' + now.getHours()).slice(-2);
+      var m = ('0' + now.getMinutes()).slice(-2);
+      var s = ('0' + now.getSeconds()).slice(-2);
+      var clockDesktop = document.getElementById('live-clock');
+      var clockFSE = document.getElementById('fse-live-clock');
+      if (clockDesktop) clockDesktop.innerText = h + ':' + m + ':' + s + ' WIB';
+      if (clockFSE) clockFSE.innerText = h + ':' + m + ' WIB';
+    }, 1000);
+  }
+
+  function initSessionAndInactivityTracker() {
+    // 1. Cek sesi tersimpan saat halaman dibuka / direfresh
+    try {
+      var savedUserJson = localStorage.getItem(SESSION_STORAGE_KEY);
+      var lastActivityTs = localStorage.getItem(LAST_ACTIVITY_KEY);
+
+      if (savedUserJson && lastActivityTs) {
+        var elapsed = Date.now() - parseInt(lastActivityTs, 10);
+        if (elapsed < TWO_HOURS_MS) {
+          // Masih dalam batas 2 jam: pulihkan sesi langsung tanpa minta login lagi
+          var parsedUser = JSON.parse(savedUserJson);
+          updateLastActivity();
+          executeLogin(parsedUser, true);
+        } else {
+          // Lewat 2 jam: bersihkan sesi
+          clearSessionData();
+          showToast('Sesi Berakhir', 'Akun otomatis logout karena tidak ada aktivitas selama 2 jam.', 'error');
+        }
+      }
+    } catch (e) {
+      console.error('Session restore error:', e);
+    }
+
+    // 2. Pasang event listener untuk semua interaksi (action) pengguna
+    var activityEvents = ['mousedown', 'mousemove', 'keydown', 'touchstart', 'scroll', 'click'];
+    var throttleTimer = null;
+
+    activityEvents.forEach(function(evt) {
+      window.addEventListener(evt, function() {
+        if (!throttleTimer && currentUser) {
+          throttleTimer = setTimeout(function() {
+            updateLastActivity();
+            throttleTimer = null;
+          }, 5000); // Throttle update ke localStorage setiap 5 detik
+        }
+      }, { passive: true });
+    });
+
+    // 3. Pengecekan berkala setiap 30 detik terhadap batas waktu 2 jam
+    setInterval(function() {
+      if (currentUser) {
+        var lastTs = localStorage.getItem(LAST_ACTIVITY_KEY);
+        if (lastTs) {
+          var diff = Date.now() - parseInt(lastTs, 10);
+          if (diff >= TWO_HOURS_MS) {
+            handleLogout(true);
+          }
+        }
+      }
+    }, 30000);
+  }
+
+  function updateLastActivity() {
+    localStorage.setItem(LAST_ACTIVITY_KEY, Date.now().toString());
+  }
+
+  function clearSessionData() {
+    localStorage.removeItem(SESSION_STORAGE_KEY);
+    localStorage.removeItem(LAST_ACTIVITY_KEY);
+  }
 
   function togglePasswordVisibility() {
     var passInput = document.getElementById('login-password');
@@ -73,7 +158,7 @@
           if (btnText) btnText.innerText = 'Masuk ke Sistem';
 
           if (res && res.status === 'success') {
-            executeLogin(res.user);
+            executeLogin(res.user, false);
           } else {
             showToast('Gagal Masuk', res ? res.message : 'Kredensial tidak cocok', 'error');
           }
@@ -89,42 +174,64 @@
       if (btnText) btnText.innerText = 'Masuk ke Sistem';
 
       var fallbackUser = {
-        userId: 'USR-LOCAL',
+        userId: (hp === '081299881122') ? 'USR-003' : 'USR-001',
         name: (hp === '081299881122') ? 'Rizky Hardiansyah' : 'Monitoring Officer',
         noHp: hp,
         roleKey: (hp === '081299881122') ? 'fse' : 'monitoring',
         roleTitle: (hp === '081299881122') ? 'Field Service Engineer' : 'Monitoring Officer',
         initials: (hp === '081299881122') ? 'RH' : 'MO',
-        wilayah: 'DKI Jakarta',
+        wilayah: 'Jakarta Pusat & Barat',
         indicator: (hp === '081299881122') ? 'FIELD SERVICE OPS' : 'NOC ATM MONITORING'
       };
-      executeLogin(fallbackUser);
+      executeLogin(fallbackUser, false);
     }
   }
 
-  function executeLogin(userObj) {
+  function executeLogin(userObj, isRestoredSession) {
     currentUser = userObj;
 
-    document.getElementById('user-profile-name').innerText = userObj.name;
-    document.getElementById('user-profile-role').innerText = userObj.roleTitle;
-    document.getElementById('user-avatar-badge').innerText = userObj.initials;
-    document.getElementById('sidebar-role-indicator').innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span><span class="truncate">' + escapeHtml(userObj.indicator) + '</span>';
-
-    applyRolePermissions(userObj);
+    // Simpan ke localStorage untuk toleransi refresh
+    localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(userObj));
+    updateLastActivity();
 
     document.getElementById('login-view').classList.add('hidden');
-    document.getElementById('app-viewport').classList.remove('hidden');
 
-    loadDropdowns();
-    fetchTickets(1);
-    loadDashboardMetrics();
-    loadSectionAuxiliaryData('FSE');
-    loadSectionAuxiliaryData('DataPM');
-    loadSectionAuxiliaryData('DatabaseMesin');
-    loadSectionAuxiliaryData('DatabaseCustomer');
-    renderKPIScorecards();
+    if (userObj.roleKey === 'fse') {
+      // Role FSE -> Buka antarmuka mobile khusus
+      document.getElementById('app-viewport').classList.add('hidden');
+      document.getElementById('fse-mobile-viewport').classList.remove('hidden');
 
-    showToast('Login Berhasil', 'Selamat datang, ' + userObj.name + ' (' + userObj.roleTitle + ')', 'success');
+      document.getElementById('fse-bar-name').innerText = userObj.name;
+      document.getElementById('fse-hero-greeting').innerText = 'Halo, ' + userObj.name.split(' ')[0] + '!';
+      document.getElementById('fse-hero-wilayah').innerHTML = '<i class="fa-solid fa-location-dot text-emerald-300"></i><span>Area Tugas: ' + escapeHtml(userObj.wilayah || 'Jabodetabek') + '</span>';
+
+      switchFSETab('dashboard');
+      loadFSEPortalData();
+    } else {
+      // Role Monitoring & Admin -> Buka Dashboard Desktop / Tablet
+      document.getElementById('fse-mobile-viewport').classList.add('hidden');
+      document.getElementById('app-viewport').classList.remove('hidden');
+
+      document.getElementById('user-profile-name').innerText = userObj.name;
+      document.getElementById('user-profile-role').innerText = userObj.roleTitle;
+      document.getElementById('user-avatar-badge').innerText = userObj.initials;
+      document.getElementById('sidebar-role-indicator').innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span><span class="truncate">' + escapeHtml(userObj.indicator) + '</span>';
+
+      applyRolePermissions(userObj);
+
+      loadDropdowns();
+      fetchTickets(1);
+      loadDashboardMetrics();
+      loadSectionAuxiliaryData('FSE');
+      loadSectionAuxiliaryData('DataPM');
+      loadSectionAuxiliaryData('DatabaseMesin');
+      loadSectionAuxiliaryData('DatabaseCustomer');
+      renderKPIScorecards();
+    }
+
+    if (!isRestoredSession) {
+      showToast('Login Berhasil', 'Selamat datang, ' + userObj.name + ' (' + userObj.roleTitle + ')', 'success');
+    }
   }
 
   function applyRolePermissions(userObj) {
@@ -133,11 +240,8 @@
     var thFseAction = document.getElementById('th-fse-action');
 
     if (fseBtnContainer) {
-      if (isMonitoring) {
-        fseBtnContainer.classList.remove('hidden');
-      } else {
-        fseBtnContainer.classList.add('hidden');
-      }
+      if (isMonitoring) fseBtnContainer.classList.remove('hidden');
+      else fseBtnContainer.classList.add('hidden');
     }
 
     if (thFseAction) {
@@ -145,295 +249,363 @@
     }
   }
 
-  function handleLogout() {
+  function handleLogout(isAutoLogout) {
+    clearSessionData();
     currentUser = null;
+
     document.getElementById('app-viewport').classList.add('hidden');
+    document.getElementById('fse-mobile-viewport').classList.add('hidden');
     document.getElementById('login-view').classList.remove('hidden');
-    showToast('Sesi Berakhir', 'Anda telah keluar dari aplikasi.', 'success');
+
+    if (isAutoLogout) {
+      showToast('Sesi Berakhir', 'Akun otomatis logout karena tidak ada aktivitas selama 2 jam.', 'error');
+    } else {
+      showToast('Sesi Berakhir', 'Anda telah keluar dari aplikasi.', 'success');
+    }
   }
 
   /* ========================================================
-   * PENGELOLAAN DATA FSE (CRUD & REALTIME SEARCH TABLE EXCEL)
+   * FSE MOBILE PORTAL: CONTROLLER, TABS & TELEMETRY
    * ======================================================== */
 
-  function handleFSESearchInput() {
-    var searchInput = document.getElementById('filter-fse-search');
-    var clearBtn = document.getElementById('btn-clear-fse-search');
-    var query = searchInput ? searchInput.value.trim() : '';
+  function switchFSETab(tabId) {
+    currentFSETab = tabId;
 
-    if (clearBtn) {
-      if (query.length > 0) {
-        clearBtn.classList.remove('hidden');
-      } else {
-        clearBtn.classList.add('hidden');
-      }
+    var subviews = document.querySelectorAll('.fse-subview');
+    for (var i = 0; i < subviews.length; i++) {
+      subviews[i].classList.add('hidden');
     }
 
-    filterFSETableClientSide();
+    var targetView = document.getElementById('fse-view-' + tabId);
+    if (targetView) targetView.classList.remove('hidden');
+
+    var buttons = document.querySelectorAll('.fse-bottom-btn');
+    for (var j = 0; j < buttons.length; j++) {
+      buttons[j].classList.remove('active', 'text-teal-700', 'font-semibold');
+      buttons[j].classList.add('text-slate-400', 'font-medium');
+    }
+
+    var targetBtn = document.getElementById('fse-nav-' + tabId);
+    if (targetBtn) {
+      targetBtn.classList.remove('text-slate-400', 'font-medium');
+      targetBtn.classList.add('active', 'text-teal-700', 'font-semibold');
+    }
   }
 
-  function clearFSESearch() {
-    var searchInput = document.getElementById('filter-fse-search');
-    var clearBtn = document.getElementById('btn-clear-fse-search');
-    if (searchInput) searchInput.value = '';
-    if (clearBtn) clearBtn.classList.add('hidden');
-    filterFSETableClientSide();
-    if (searchInput) searchInput.focus();
+  function loadFSEPortalData() {
+    if (!currentUser || currentUser.roleKey !== 'fse') return;
+
+    if (typeof google !== 'undefined' && google.script && google.script.run) {
+      google.script.run
+        .withSuccessHandler(function(res) {
+          if (res && res.status === 'success') {
+            renderFSEPortalDOM(res.data);
+          }
+        })
+        .withFailureHandler(function(err) {
+          console.error('Error loadFSEPortalData:', err);
+        })
+        .getFSEPersonalSummary(currentUser.name, currentUser.userId);
+    } else {
+      // Local fallback simulator
+      var mockSummary = {
+        wilayah: currentUser.wilayah || 'Jakarta Pusat & Barat',
+        jumlahMesin: 8,
+        totalCM: 2,
+        totalPM: '1/1 (100%)',
+        assignedTickets: [
+          { idTiket: '260910-0001', bank: 'Bank Central Asia (BCA)', serialNumber: 'SN-BCA-99201', idMesin: 'ATM-BCA-01', tanggalTiket: '2026-09-10', jamTiket: '08:15:20', tipeTiket: 'CM', problem: 'Mesin Card Reader error code 42', statusTiket: 'Handling', note: '' },
+          { idTiket: '260910-0004', bank: 'Bank CIMB Niaga', serialNumber: 'SN-CIMB-3341', idMesin: 'ATM-CIMB-01', tanggalTiket: '2026-09-10', jamTiket: '13:00:10', tipeTiket: 'CM', problem: 'Cash Jammed dispenser', statusTiket: 'Respon', note: '' }
+        ],
+        closedDocuments: [
+          { idTiket: '260908-0012', bank: 'Bank Mandiri', serialNumber: 'SN-MDR-44011', idMesin: 'ATM-MDR-01', closedAt: '2026-09-08 16:30:00', hardcopyStatus: 'Belum Dikirim' }
+        ]
+      };
+      renderFSEPortalDOM(mockSummary);
+    }
   }
 
-  function filterFSETableClientSide() {
-    var searchInput = document.getElementById('filter-fse-search');
-    var q = searchInput ? searchInput.value.toLowerCase().trim() : '';
+  function renderFSEPortalDOM(data) {
+    if (!data) return;
 
-    if (!q) {
-      renderFSETable(currentFSEList);
+    // 1. Dashboard Metrics
+    document.getElementById('fse-stat-mesin').innerText = (data.jumlahMesin || 0);
+    document.getElementById('fse-stat-cm').innerText = (data.totalCM || 0);
+    document.getElementById('fse-stat-pm').innerText = (data.totalPM || 0);
+
+    // 2. Render Assigned Tickets
+    renderFSETicketsList(data.assignedTickets || []);
+
+    // 3. Render Closed Documents (Tab Kirim Dokumen)
+    renderFSEClosedDocuments(data.closedDocuments || [], data.wilayah || 'Jabodetabek');
+  }
+
+  function renderFSETicketsList(tickets) {
+    var container = document.getElementById('fse-ticket-cards-container');
+    var badge = document.getElementById('fse-ticket-count-badge');
+    if (!container) return;
+
+    if (!tickets || tickets.length === 0) {
+      container.innerHTML = '<div class="soft-card-panel p-6 text-center text-slate-400 text-xs rounded-2xl"><i class="fa-solid fa-clipboard-check text-2xl text-teal-600 mb-2 block"></i>Tidak ada antrean tiket aktif saat ini. Kerja bagus!</div>';
+      if (badge) badge.classList.add('hidden');
       return;
     }
 
-    var filtered = currentFSEList.filter(function(item) {
-      return (
-        String(item.userId || '').toLowerCase().indexOf(q) !== -1 ||
-        String(item.nama || '').toLowerCase().indexOf(q) !== -1 ||
-        String(item.wilayah || '').toLowerCase().indexOf(q) !== -1 ||
-        String(item.noHp || '').toLowerCase().indexOf(q) !== -1
-      );
-    });
+    if (badge) badge.classList.remove('hidden');
 
-    renderFSETable(filtered);
-  }
-
-  function renderFSETable(list) {
-    var tbody = document.getElementById('fse-table-body');
-    if (!tbody) return;
-
-    if (!list || list.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="8" class="text-center py-8 text-slate-400 font-mono text-xs"><i class="fa-solid fa-users-slash text-2xl mb-2 block text-slate-300"></i>Tidak ada data FSE yang cocok</td></tr>';
-      return;
-    }
-
-    var isMonitoring = (currentUser && (currentUser.roleKey === 'monitoring' || currentUser.roleKey === 'admin'));
     var html = '';
+    for (var i = 0; i < tickets.length; i++) {
+      var t = tickets[i];
+      var st = String(t.statusTiket || 'Open').trim();
+      var stLower = st.toLowerCase();
 
-    for (var i = 0; i < list.length; i++) {
-      var item = list[i];
-      var isAktif = (String(item.status || 'Aktif').toLowerCase() === 'aktif');
-      var statusBadge = isAktif
-        ? '<span class="px-2.5 py-0.5 rounded-full text-[10px] font-semibold border bg-emerald-50 text-emerald-700 border-emerald-200">Aktif</span>'
-        : '<span class="px-2.5 py-0.5 rounded-full text-[10px] font-semibold border bg-rose-50 text-rose-700 border-rose-200">Nonaktif</span>';
-
-      html += '<tr class="hover:bg-white/80 transition">';
-      html += '<td class="p-3 font-mono font-bold text-teal-700 whitespace-nowrap">' + escapeHtml(item.userId || ('USR-00' + (i + 1))) + '</td>';
-      html += '<td class="p-3">';
-      html += '<div class="font-semibold text-slate-800">' + escapeHtml(item.nama) + '</div>';
-      html += '<div class="text-[10px] text-slate-400 font-mono"><i class="fa-solid fa-phone mr-1"></i>' + escapeHtml(item.noHp || '-') + '</div>';
-      html += '</td>';
-      html += '<td class="p-3 text-slate-700 whitespace-nowrap">' + escapeHtml(item.wilayah || '-') + '</td>';
-      html += '<td class="p-3 text-center whitespace-nowrap"><span class="px-2.5 py-1 rounded-lg bg-teal-50 border border-teal-200 font-mono font-bold text-teal-800">' + (item.jumlahMesin || 0) + ' Mesin</span></td>';
-      html += '<td class="p-3 text-center whitespace-nowrap"><span class="px-2.5 py-1 rounded-lg bg-slate-100 border border-slate-200 font-mono font-bold text-slate-700">' + (item.totalCM || 0) + ' Tiket</span></td>';
-      html += '<td class="p-3 text-center whitespace-nowrap"><span class="px-2.5 py-1 rounded-lg bg-emerald-50 border border-emerald-200 font-mono font-bold text-emerald-700">' + escapeHtml(item.pmAchievement || '0 / 0 (100%)') + '</span></td>';
-      html += '<td class="p-3 text-center whitespace-nowrap">' + statusBadge + '</td>';
+      html += '<div class="soft-card-panel p-3.5 rounded-2xl space-y-2.5 border border-slate-200/90 shadow-sm bg-white/80">';
       
-      if (isMonitoring) {
-        html += '<td class="p-3 text-center whitespace-nowrap">';
-        html += '<div class="flex items-center justify-center gap-1.5">';
-        html += '<button onclick="openEditFSEModal(\'' + escapeHtml(item.userId) + '\')" title="Edit Data FSE" class="px-2.5 py-1 rounded-lg bg-white border border-slate-200 text-teal-700 hover:bg-teal-50 hover:border-teal-300 transition shadow-sm font-medium text-[11px] flex items-center gap-1">';
-        html += '<i class="fa-solid fa-pen-to-square text-[10px]"></i> Edit';
-        html += '</button>';
-        html += '<button onclick="handleToggleFSEStatus(\'' + escapeHtml(item.userId) + '\', \'' + escapeHtml(item.status || 'Aktif') + '\')" title="' + (isAktif ? 'Nonaktifkan Akun' : 'Aktifkan Akun') + '" class="px-2 py-1 rounded-lg border text-[11px] transition shadow-sm font-medium ' + (isAktif ? 'bg-white border-slate-200 text-slate-500 hover:bg-rose-50 hover:text-rose-600 hover:border-rose-200' : 'bg-emerald-50 border-emerald-200 text-emerald-700 hover:bg-emerald-100') + '">';
-        html += isAktif ? '<i class="fa-solid fa-power-off"></i>' : '<i class="fa-solid fa-check"></i>';
-        html += '</button>';
-        html += '</div>';
-        html += '</td>';
+      // Header Card
+      html += '<div class="flex items-center justify-between">';
+      html += '<span class="font-mono font-bold text-teal-700 text-xs">' + escapeHtml(t.idTiket) + '</span>';
+      html += getStatusBadgeHtml(st);
+      html += '</div>';
+
+      // Machine & Bank info
+      html += '<div>';
+      html += '<div class="font-bold text-xs text-slate-800">' + escapeHtml(t.bank) + '</div>';
+      html += '<div class="text-[11px] font-mono text-slate-500">' + escapeHtml(t.serialNumber) + ' &bull; ' + escapeHtml(t.idMesin) + '</div>';
+      html += '</div>';
+
+      // Problem description
+      html += '<div class="p-2 rounded-xl bg-slate-50 border border-slate-100 text-[11px] text-slate-700">';
+      html += '<span class="font-semibold text-slate-900 block mb-0.5">Problem:</span>';
+      html += escapeHtml(t.problem);
+      if (t.note) {
+        html += '<div class="mt-1 text-[10px] text-slate-500 italic border-t border-slate-200/50 pt-1">' + escapeHtml(t.note) + '</div>';
+      }
+      html += '</div>';
+
+      // Waktu buat
+      html += '<div class="flex items-center justify-between text-[10px] text-slate-400 font-mono">';
+      html += '<span><i class="fa-regular fa-clock mr-1"></i>' + escapeHtml(t.tanggalTiket) + ' ' + escapeHtml(t.jamTiket) + '</span>';
+      html += '<span class="uppercase font-semibold text-teal-700">' + escapeHtml(t.tipeTiket) + '</span>';
+      html += '</div>';
+
+      // STRICT FSE ACTION BUTTONS ENGINE
+      html += '<div class="pt-2 border-t border-slate-100 flex flex-wrap gap-1.5">';
+
+      if (stLower === 'open' || stLower === 'baru') {
+        html += '<button onclick="executeFSEAction(\'' + escapeHtml(t.idTiket) + '\', \'Respon\')" class="flex-1 soft-btn-primary py-2 rounded-xl text-xs font-semibold flex items-center justify-center gap-1"><i class="fa-solid fa-check"></i> Respon Tiket</button>';
+      } else if (stLower === 'respon') {
+        html += '<button onclick="executeFSEAction(\'' + escapeHtml(t.idTiket) + '\', \'Appointment\')" class="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white py-2 rounded-xl text-xs font-semibold shadow-sm flex items-center justify-center gap-1"><i class="fa-solid fa-calendar-check"></i> Konfirmasi Appointment</button>';
+      } else if (stLower === 'appointment') {
+        html += '<button onclick="executeFSEAction(\'' + escapeHtml(t.idTiket) + '\', \'Handling\')" class="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-2 rounded-xl text-xs font-semibold shadow-sm flex items-center justify-center gap-1"><i class="fa-solid fa-wrench"></i> Mulai Handling di Lokasi</button>';
+      } else if (stLower === 'handling' || stLower === 'take a part') {
+        html += '<button onclick="openReAppointmentModal(\'' + escapeHtml(t.idTiket) + '\')" class="px-3 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-xl text-[11px] font-semibold flex items-center gap-1"><i class="fa-solid fa-arrows-rotate"></i> Re-Appointment</button>';
+        if (stLower !== 'take a part') {
+          html += '<button onclick="executeFSEAction(\'' + escapeHtml(t.idTiket) + '\', \'Take a Part\')" class="px-2.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-[11px] font-medium"><i class="fa-solid fa-box-open mr-1"></i>Take Part</button>';
+        }
+        html += '<button onclick="executeFSEAction(\'' + escapeHtml(t.idTiket) + '\', \'Solving\')" class="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white py-2 rounded-xl text-xs font-semibold shadow-sm flex items-center justify-center gap-1"><i class="fa-solid fa-circle-check"></i> Solving / Selesai</button>';
+      } else if (stLower === 'solving' || stLower === 'solved') {
+        html += '<div class="w-full text-center py-1.5 px-2 bg-emerald-50 text-emerald-800 rounded-xl text-[11px] font-medium border border-emerald-200"><i class="fa-solid fa-lock mr-1"></i> Tiket Solved (Menunggu Closed Monitoring)</div>';
+      } else if (stLower === 'cancel') {
+        html += '<div class="w-full text-center py-1.5 px-2 bg-rose-50 text-rose-700 rounded-xl text-[11px] font-medium border border-rose-200"><i class="fa-solid fa-ban mr-1"></i> Tiket Dibatalkan (Hanya Monitoring yang berhak ubah)</div>';
+      }
+
+      html += '</div>';
+      html += '</div>';
+    }
+
+    container.innerHTML = html;
+  }
+
+  function renderFSEClosedDocuments(documents, wilayahFSE) {
+    var container = document.getElementById('fse-document-cards-container');
+    var docAlert = document.getElementById('fse-doc-alert-badge');
+    if (!container) return;
+
+    if (!documents || documents.length === 0) {
+      container.innerHTML = '<div class="soft-card-panel p-6 text-center text-slate-400 text-xs rounded-2xl"><i class="fa-solid fa-file-circle-check text-2xl text-teal-600 mb-2 block"></i>Tidak ada berkas hardcopy yang perlu dikirim saat ini.</div>';
+      if (docAlert) docAlert.classList.add('hidden');
+      return;
+    }
+
+    // Deteksi wilayah Jabodetabek (3 Hari) vs Luar Jabodetabek (7 Hari)
+    var wLower = String(wilayahFSE || '').toLowerCase();
+    var isJabodetabek = (
+      wLower.indexOf('jakarta') !== -1 ||
+      wLower.indexOf('jabodetabek') !== -1 ||
+      wLower.indexOf('bogor') !== -1 ||
+      wLower.indexOf('depok') !== -1 ||
+      wLower.indexOf('tangerang') !== -1 ||
+      wLower.indexOf('bekasi') !== -1
+    );
+
+    var maxDays = isJabodetabek ? 3 : 7;
+    var html = '';
+    var hasPendingDoc = false;
+
+    for (var i = 0; i < documents.length; i++) {
+      var doc = documents[i];
+      var isReceived = (String(doc.hardcopyStatus).toLowerCase() === 'diterima');
+
+      var closedDate = doc.closedAt ? new Date(doc.closedAt.replace(/-/g, '/')) : new Date();
+      var deadlineDate = new Date(closedDate.getTime() + (maxDays * 24 * 60 * 60 * 1000));
+      var now = new Date();
+      var diffMs = deadlineDate.getTime() - now.getTime();
+      var diffHours = Math.round(diffMs / (1000 * 60 * 60));
+      var diffDays = Math.ceil(diffHours / 24);
+
+      var slaBadge = '';
+      if (isReceived) {
+        slaBadge = '<span class="px-2.5 py-0.5 rounded-full text-[10px] bg-emerald-50 border border-emerald-200 text-emerald-700 font-bold"><i class="fa-solid fa-check-double mr-1"></i>File Diterima Admin</span>';
+      } else if (diffHours < 0) {
+        hasPendingDoc = true;
+        slaBadge = '<span class="px-2.5 py-0.5 rounded-full text-[10px] bg-rose-50 border border-rose-200 text-rose-700 font-bold animate-pulse"><i class="fa-solid fa-triangle-exclamation mr-1"></i>Overdue (' + Math.abs(diffDays) + ' Hari)</span>';
+      } else if (diffDays <= 1) {
+        hasPendingDoc = true;
+        slaBadge = '<span class="px-2.5 py-0.5 rounded-full text-[10px] bg-amber-50 border border-amber-200 text-amber-700 font-bold"><i class="fa-solid fa-clock mr-1"></i>Batas Hari Ini (' + diffHours + ' Jam)</span>';
       } else {
-        html += '<td class="p-3 text-center text-slate-400 text-[11px] italic">-</td>';
+        hasPendingDoc = true;
+        slaBadge = '<span class="px-2.5 py-0.5 rounded-full text-[10px] bg-sky-50 border border-sky-200 text-sky-700 font-semibold">Sisa ' + diffDays + ' Hari</span>';
       }
 
-      html += '</tr>';
+      html += '<div class="soft-card-panel p-3.5 rounded-2xl space-y-2 border border-slate-200/90 shadow-sm bg-white/80">';
+      html += '<div class="flex items-center justify-between">';
+      html += '<span class="font-mono font-bold text-teal-700 text-xs">' + escapeHtml(doc.idTiket) + '</span>';
+      html += slaBadge;
+      html += '</div>';
+
+      html += '<div>';
+      html += '<div class="font-bold text-xs text-slate-800">' + escapeHtml(doc.bank) + '</div>';
+      html += '<div class="text-[11px] font-mono text-slate-500">' + escapeHtml(doc.serialNumber) + ' (' + escapeHtml(doc.idMesin) + ')</div>';
+      html += '</div>';
+
+      html += '<div class="p-2 rounded-xl bg-slate-50 border border-slate-100 text-[10px] text-slate-600 flex justify-between">';
+      html += '<span>Closed: ' + escapeHtml(doc.closedAt || '-') + '</span>';
+      html += '<span class="font-semibold text-slate-700">Target Hardcopy: ' + maxDays + ' Hari</span>';
+      html += '</div>';
+
+      if (isReceived) {
+        html += '<div class="text-[10px] text-emerald-700 bg-emerald-50/70 p-2 rounded-xl border border-emerald-200">';
+        html += '<i class="fa-solid fa-circle-check mr-1"></i> Berkas telah diverifikasi oleh <b>' + escapeHtml(doc.hardcopyReceivedBy || 'Admin') + '</b>';
+        html += '</div>';
+      } else {
+        html += '<div class="text-[10px] text-slate-500 italic">';
+        html += 'Kirim dokumen fisik (BAST/Service Sheet) ke Kantor Ops Admin.';
+        html += '</div>';
+      }
+
+      html += '</div>';
     }
 
-    tbody.innerHTML = html;
-  }
-
-  function openCreateFSEModal() {
-    if (!currentUser || (currentUser.roleKey !== 'monitoring' && currentUser.roleKey !== 'admin')) {
-      showToast('Akses Ditolak', 'Hanya role Monitoring yang diizinkan mendaftarkan FSE baru!', 'error');
-      return;
-    }
-    document.getElementById('form-new-fse').reset();
-    document.getElementById('input-fse-mesin').value = '5';
-    document.getElementById('modal-create-fse').classList.remove('hidden');
-  }
-
-  function closeCreateFSEModal() {
-    document.getElementById('modal-create-fse').classList.add('hidden');
-    document.getElementById('form-new-fse').reset();
-  }
-
-  function handleCreateFSESubmit(event) {
-    event.preventDefault();
-
-    if (!currentUser || (currentUser.roleKey !== 'monitoring' && currentUser.roleKey !== 'admin')) {
-      showToast('Akses Ditolak', 'Hanya role Monitoring yang berhak mendaftarkan FSE!', 'error');
-      return;
+    if (docAlert) {
+      if (hasPendingDoc) docAlert.classList.remove('hidden');
+      else docAlert.classList.add('hidden');
     }
 
-    var payload = {
-      nama: String(document.getElementById('input-fse-nama').value).trim(),
-      noHp: String(document.getElementById('input-fse-hp').value).trim(),
-      password: String(document.getElementById('input-fse-password').value).trim(),
-      wilayah: String(document.getElementById('input-fse-wilayah').value).trim(),
-      kelolaanMesin: parseInt(document.getElementById('input-fse-mesin').value, 10) || 0
-    };
+    container.innerHTML = html;
+  }
 
-    var tempUserId = 'USR-0' + (currentFSEList.length + 3);
-    var optimisticFSE = {
-      userId: tempUserId,
-      nama: payload.nama,
-      wilayah: payload.wilayah,
-      noHp: payload.noHp,
-      status: 'Aktif',
-      jumlahMesin: payload.kelolaanMesin,
-      totalCM: 0,
-      pmAchievement: '0 / 0 (100%)'
-    };
-
-    currentFSEList.unshift(optimisticFSE);
-    renderFSETable(currentFSEList);
-
-    if (!cachedDropdowns.engineers) cachedDropdowns.engineers = [];
-    cachedDropdowns.engineers.unshift(optimisticFSE);
-    populateDropdownDOM();
-
-    closeCreateFSEModal();
-    showToast('FSE Didaftarkan', 'Akun FSE ' + payload.nama + ' berhasil dibuat!', 'success');
+  function executeFSEAction(ticketId, targetStatus) {
+    if (!currentUser) return;
 
     if (typeof google !== 'undefined' && google.script && google.script.run) {
       google.script.run
         .withSuccessHandler(function(res) {
           if (res && res.status === 'success') {
-            loadSectionAuxiliaryData('FSE');
-            loadDropdowns();
+            showToast('Status Diperbarui', 'Tiket ' + ticketId + ' diubah ke: ' + targetStatus, 'success');
+            loadFSEPortalData();
           } else {
-            showToast('Peringatan', res ? res.message : 'Gagal simpan ke database', 'error');
+            showToast('Aksi Ditolak', res ? res.message : 'Gagal memperbarui status', 'error');
           }
         })
         .withFailureHandler(function(err) {
-          showToast('Error Server', 'Gagal mendaftarkan FSE: ' + err, 'error');
+          showToast('Error Server', 'Gagal memproses aksi: ' + err, 'error');
         })
-        .registerFSE(payload, currentUser);
+        .updateTicketStatus(ticketId, targetStatus, '', currentUser);
+    } else {
+      showToast('Status Diperbarui (Simulasi)', 'Tiket ' + ticketId + ' -> ' + targetStatus, 'success');
+      loadFSEPortalData();
     }
   }
 
-  function openEditFSEModal(userId) {
-    if (!currentUser || (currentUser.roleKey !== 'monitoring' && currentUser.roleKey !== 'admin')) {
-      showToast('Akses Ditolak', 'Hanya role Monitoring yang berhak mengedit data FSE!', 'error');
-      return;
-    }
-
-    var targetFSE = null;
-    for (var i = 0; i < currentFSEList.length; i++) {
-      if (currentFSEList[i].userId === userId) {
-        targetFSE = currentFSEList[i];
-        break;
-      }
-    }
-
-    if (!targetFSE) {
-      showToast('Error', 'Data FSE tidak ditemukan', 'error');
-      return;
-    }
-
-    document.getElementById('edit-fse-userid').value = targetFSE.userId;
-    document.getElementById('edit-fse-nama').value = targetFSE.nama;
-    document.getElementById('edit-fse-hp').value = targetFSE.noHp;
-    document.getElementById('edit-fse-password').value = '';
-    document.getElementById('edit-fse-wilayah').value = targetFSE.wilayah;
-    document.getElementById('edit-fse-mesin').value = targetFSE.jumlahMesin || 0;
-    document.getElementById('edit-fse-status').value = targetFSE.status || 'Aktif';
-
-    document.getElementById('modal-edit-fse').classList.remove('hidden');
+  function openReAppointmentModal(ticketId) {
+    document.getElementById('reappoint-ticket-id').value = ticketId;
+    document.getElementById('reappoint-note').value = '';
+    document.getElementById('modal-reappointment').classList.remove('hidden');
   }
 
-  function closeEditFSEModal() {
-    document.getElementById('modal-edit-fse').classList.add('hidden');
-    document.getElementById('form-edit-fse').reset();
+  function closeReAppointmentModal() {
+    document.getElementById('modal-reappointment').classList.add('hidden');
   }
 
-  function handleEditFSESubmit(event) {
+  function handleReAppointmentSubmit(event) {
     event.preventDefault();
+    var tId = document.getElementById('reappoint-ticket-id').value;
+    var dt = document.getElementById('reappoint-datetime').value;
+    var note = document.getElementById('reappoint-note').value;
 
-    var payload = {
-      userId: document.getElementById('edit-fse-userid').value.trim(),
-      nama: document.getElementById('edit-fse-nama').value.trim(),
-      noHp: document.getElementById('edit-fse-hp').value.trim(),
-      password: document.getElementById('edit-fse-password').value.trim(),
-      wilayah: document.getElementById('edit-fse-wilayah').value.trim(),
-      kelolaanMesin: parseInt(document.getElementById('edit-fse-mesin').value, 10) || 0,
-      status: document.getElementById('edit-fse-status').value
-    };
-
-    // Optimistic Update
-    for (var i = 0; i < currentFSEList.length; i++) {
-      if (currentFSEList[i].userId === payload.userId) {
-        currentFSEList[i].nama = payload.nama;
-        currentFSEList[i].noHp = payload.noHp;
-        currentFSEList[i].wilayah = payload.wilayah;
-        currentFSEList[i].jumlahMesin = payload.kelolaanMesin;
-        currentFSEList[i].status = payload.status;
-        break;
-      }
-    }
-    renderFSETable(currentFSEList);
-
-    closeEditFSEModal();
-    showToast('Data Diperbarui', 'Data FSE ' + payload.nama + ' berhasil diperbarui.', 'success');
+    var combinedNote = 'Jadwal Baru: ' + dt + ' | ' + note;
+    closeReAppointmentModal();
 
     if (typeof google !== 'undefined' && google.script && google.script.run) {
       google.script.run
         .withSuccessHandler(function(res) {
           if (res && res.status === 'success') {
-            loadSectionAuxiliaryData('FSE');
-            loadDropdowns();
+            showToast('Re-Appointment Berhasil', 'Jadwal ulang untuk tiket ' + tId + ' disimpan!', 'success');
+            loadFSEPortalData();
           } else {
-            showToast('Peringatan', res ? res.message : 'Gagal simpan ke database', 'error');
+            showToast('Gagal', res.message, 'error');
           }
         })
-        .withFailureHandler(function(err) {
-          showToast('Error Server', 'Gagal update FSE: ' + err, 'error');
-        })
-        .updateFSE(payload, currentUser);
-    }
-  }
-
-  function handleToggleFSEStatus(userId, currentStatus) {
-    if (!currentUser || (currentUser.roleKey !== 'monitoring' && currentUser.roleKey !== 'admin')) {
-      showToast('Akses Ditolak', 'Hanya role Monitoring yang berhak mengubah status akun FSE!', 'error');
-      return;
-    }
-
-    var newStatus = (currentStatus === 'Aktif') ? 'Nonaktif' : 'Aktif';
-    for (var i = 0; i < currentFSEList.length; i++) {
-      if (currentFSEList[i].userId === userId) {
-        currentFSEList[i].status = newStatus;
-        break;
-      }
-    }
-    renderFSETable(currentFSEList);
-    showToast('Status Diubah', 'Akun ' + userId + ' diubah menjadi ' + newStatus, 'success');
-
-    if (typeof google !== 'undefined' && google.script && google.script.run) {
-      google.script.run
-        .withSuccessHandler(function(res) {
-          if (res && res.status === 'success') {
-            loadSectionAuxiliaryData('FSE');
-          }
-        })
-        .toggleFSEStatus(userId, currentStatus, currentUser);
+        .updateTicketStatus(tId, 'Appointment', combinedNote, currentUser);
+    } else {
+      showToast('Re-Appointment Tersimpan', 'Jadwal baru: ' + dt, 'success');
+      loadFSEPortalData();
     }
   }
 
   /* ========================================================
-   * NAVIGATION, DROPDOWNS & TICKETS LIFECYCLE
+   * ROLE ADMIN: VERIFIKASI PENERIMAAN HARDCOPY (FILE DITERIMA)
+   * ======================================================== */
+
+  function openReceiveHardcopyModal(ticketId) {
+    activeReceiveTicketId = ticketId;
+    document.getElementById('rcv-modal-ticket-id').innerText = ticketId;
+    document.getElementById('modal-receive-hardcopy').classList.remove('hidden');
+  }
+
+  function closeReceiveHardcopyModal() {
+    document.getElementById('modal-receive-hardcopy').classList.add('hidden');
+    activeReceiveTicketId = null;
+  }
+
+  function confirmReceiveHardcopyAction() {
+    if (!activeReceiveTicketId || !currentUser) return;
+    var tId = activeReceiveTicketId;
+
+    closeReceiveHardcopyModal();
+
+    if (typeof google !== 'undefined' && google.script && google.script.run) {
+      google.script.run
+        .withSuccessHandler(function(res) {
+          if (res && res.status === 'success') {
+            showToast('Hardcopy Diterima', res.message, 'success');
+            fetchTickets(currentPage);
+          } else {
+            showToast('Peringatan', res ? res.message : 'Gagal konfirmasi berkas', 'error');
+          }
+        })
+        .withFailureHandler(function(err) {
+          showToast('Error Server', 'Gagal memproses: ' + err, 'error');
+        })
+        .markHardcopyReceived(tId, currentUser);
+    } else {
+      showToast('Hardcopy Diterima (Simulasi)', 'Berkas tiket ' + tId + ' ditandai telah diterima Admin.', 'success');
+      fetchTickets(currentPage);
+    }
+  }
+
+  /* ========================================================
+   * DESKTOP APP VIEWS (MONITORING & ADMIN CONTROLLER)
    * ======================================================== */
 
   function toggleSidebar() {
@@ -448,17 +620,6 @@
       sidebar.classList.remove('sidebar-collapsed');
       toggleIcon.className = 'fa-solid fa-bars-staggered text-xs';
     }
-  }
-
-  function startLiveClock() {
-    setInterval(function() {
-      var now = new Date();
-      var h = ('0' + now.getHours()).slice(-2);
-      var m = ('0' + now.getMinutes()).slice(-2);
-      var s = ('0' + now.getSeconds()).slice(-2);
-      var el = document.getElementById('live-clock');
-      if (el) el.innerText = h + ':' + m + ':' + s + ' WIB';
-    }, 1000);
   }
 
   function navigateTo(sectionId) {
@@ -517,6 +678,272 @@
     }
   }
 
+  function fetchTickets(page) {
+    currentPage = page || 1;
+    var searchEl = document.getElementById('filter-search');
+    var statusEl = document.getElementById('filter-status');
+    var bankEl = document.getElementById('filter-bank');
+
+    var searchVal = searchEl ? String(searchEl.value || '').trim() : '';
+    var statusVal = statusEl ? String(statusEl.value || 'ALL').trim() : 'ALL';
+    var bankVal = bankEl ? String(bankEl.value || 'ALL').trim() : 'ALL';
+
+    var tbody = document.getElementById('tickets-table-body');
+    if (tbody && (!currentTicketsList || currentTicketsList.length === 0)) {
+      tbody.innerHTML = '<tr><td colspan="8" class="text-center py-6 text-slate-400 font-mono text-xs"><i class="fa-solid fa-spinner fa-spin text-teal-600 mr-2"></i>Mengambil antrean tiket...</td></tr>';
+    }
+
+    if (typeof google !== 'undefined' && google.script && google.script.run) {
+      google.script.run
+        .withSuccessHandler(function(res) {
+          if (res && res.status === 'success') {
+            currentTicketsList = res.tickets || [];
+            currentPage = res.page || 1;
+            totalPages = res.totalPages || 1;
+            totalItems = res.totalItems || 0;
+            renderTicketsTable(currentTicketsList);
+            updatePaginationControls();
+          }
+        })
+        .getTicketsPaginated(currentPage, pageSize, searchVal, statusVal, bankVal);
+    } else {
+      if (!currentTicketsList || currentTicketsList.length === 0) {
+        currentTicketsList = [
+          { idTiket: '260910-0001', bank: 'Bank Central Asia (BCA)', serialNumber: 'SN-BCA-99201', idMesin: 'ATM-BCA-01', tanggalTiket: '2026-09-10', jamTiket: '08:15:20', tipeTiket: 'Corrective Maintenance (CM)', namaEngineer: 'Rizky Hardiansyah', problem: 'Mesin Card Reader error code 42 (Card Jammed)', note: 'Prioritas tinggi, nasabah antre.', statusTiket: 'Handling', hardcopyStatus: 'Belum Dikirim', updatedAt: '2026-09-10 09:20:00' },
+          { idTiket: '260910-0002', bank: 'Bank Mandiri', serialNumber: 'SN-MDR-44011', idMesin: 'ATM-MDR-01', tanggalTiket: '2026-09-10', jamTiket: '09:30:10', tipeTiket: 'Preventive Maintenance (PM)', namaEngineer: 'Fajar Ramadhan', problem: 'Jadwal pembersihan modul dispenser & check sensor', note: 'PM Rutin Kuartal 3', statusTiket: 'Closed', hardcopyStatus: 'Belum Dikirim', closedAt: '2026-09-10 11:30:00', updatedAt: '2026-09-10 11:00:00' },
+          { idTiket: '260910-0003', bank: 'Bank Rakyat Indonesia (BRI)', serialNumber: 'SN-BRI-11055', idMesin: 'ATM-BRI-01', tanggalTiket: '2026-09-10', jamTiket: '10:05:44', tipeTiket: 'Corrective Maintenance (CM)', namaEngineer: 'Dimas Kurniawan', problem: 'Receipt Printer Out of Paper & Cutter Jam', note: 'Kertas cadangan dibawa FSE', statusTiket: 'Appointment', hardcopyStatus: 'Belum Dikirim', updatedAt: '2026-09-10 10:15:00' }
+        ];
+      }
+      totalItems = currentTicketsList.length;
+      totalPages = 1;
+      renderTicketsTable(currentTicketsList);
+      updatePaginationControls();
+    }
+  }
+
+  function renderTicketsTable(tickets) {
+    var tbody = document.getElementById('tickets-table-body');
+    if (!tbody) return;
+
+    if (!tickets || tickets.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="8" class="text-center py-8 text-slate-400 font-mono text-xs"><i class="fa-solid fa-inbox text-2xl mb-2 block text-slate-300"></i>Tidak ada tiket di database yang cocok</td></tr>';
+      return;
+    }
+
+    var isAdmin = (currentUser && currentUser.roleKey === 'admin');
+    var html = '';
+
+    for (var i = 0; i < tickets.length; i++) {
+      var t = tickets[i];
+      var badge = getStatusBadgeHtml(t.statusTiket);
+      var isClosed = (String(t.statusTiket).toLowerCase() === 'closed');
+      var isHardcopyReceived = (String(t.hardcopyStatus).toLowerCase() === 'diterima');
+
+      html += '<tr class="hover:bg-white/80 transition">';
+      html += '<td class="p-3 font-mono font-bold text-teal-700 whitespace-nowrap">' + escapeHtml(t.idTiket) + '</td>';
+      html += '<td class="p-3">';
+      html += '<div class="font-semibold text-slate-800">' + escapeHtml(t.bank) + '</div>';
+      html += '<div class="text-[11px] text-slate-500 font-mono">' + escapeHtml(t.serialNumber) + ' (' + escapeHtml(t.idMesin) + ')</div>';
+      html += '</td>';
+      html += '<td class="p-3 whitespace-nowrap">';
+      html += '<div class="text-slate-700 font-mono">' + escapeHtml(t.tanggalTiket) + '</div>';
+      html += '<div class="text-[10px] text-slate-400 font-mono">' + escapeHtml(t.jamTiket) + '</div>';
+      html += '</td>';
+      html += '<td class="p-3 whitespace-nowrap text-slate-600">' + escapeHtml(t.tipeTiket) + '</td>';
+      html += '<td class="p-3 whitespace-nowrap">';
+      html += '<span class="px-2.5 py-1 rounded-lg bg-slate-100 border border-slate-200 text-slate-700 font-medium">' + escapeHtml(t.namaEngineer) + '</span>';
+      html += '</td>';
+      html += '<td class="p-3 max-w-xs">';
+      html += '<div class="font-medium text-slate-800 truncate" title="' + escapeHtml(t.problem) + '">' + escapeHtml(t.problem) + '</div>';
+      if (t.note) {
+        html += '<div class="text-[10px] text-slate-500 italic truncate" title="' + escapeHtml(t.note) + '">' + escapeHtml(t.note) + '</div>';
+      }
+      html += '</td>';
+      html += '<td class="p-3 whitespace-nowrap">' + badge + '</td>';
+      
+      // Kolom Aksi
+      html += '<td class="p-3 text-center whitespace-nowrap">';
+      html += '<div class="flex items-center justify-center gap-1.5">';
+      html += '<button onclick="openStatusModal(\'' + escapeHtml(t.idTiket) + '\', \'' + escapeHtml(t.statusTiket) + '\')" class="px-2.5 py-1 text-[11px] rounded-lg bg-teal-50 border border-teal-200 text-teal-700 hover:bg-teal-600 hover:text-white transition font-medium shadow-sm">';
+      html += '<i class="fa-solid fa-bolt text-[10px]"></i> Aksi';
+      html += '</button>';
+
+      // Tombol Khusus Admin untuk Tiket Closed
+      if (isClosed) {
+        if (isHardcopyReceived) {
+          html += '<span class="px-2 py-1 text-[10px] rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-700 font-bold" title="Hardcopy telah diterima"><i class="fa-solid fa-check-double"></i> Dokumen OK</span>';
+        } else if (isAdmin) {
+          html += '<button onclick="openReceiveHardcopyModal(\'' + escapeHtml(t.idTiket) + '\')" class="px-2.5 py-1 text-[11px] rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white transition font-semibold shadow-sm flex items-center gap-1">';
+          html += '<i class="fa-solid fa-box-archive text-[10px]"></i> File Diterima';
+          html += '</button>';
+        }
+      }
+
+      html += '</div>';
+      html += '</td>';
+      html += '</tr>';
+    }
+
+    tbody.innerHTML = html;
+    renderDashboardRecent(tickets);
+  }
+
+  function getStatusBadgeHtml(status) {
+    var s = String(status || '').trim();
+    var colorClass = 'bg-slate-100 text-slate-700 border-slate-200';
+
+    if (s === 'Open' || s === 'Baru') colorClass = 'bg-amber-50 text-amber-700 border-amber-200';
+    else if (s === 'Respon') colorClass = 'bg-sky-50 text-sky-700 border-sky-200';
+    else if (s === 'Appointment' || s === 'Re-Appointment') colorClass = 'bg-indigo-50 text-indigo-700 border-indigo-200';
+    else if (s === 'Handling' || s === 'Proses') colorClass = 'bg-blue-50 text-blue-700 border-blue-200';
+    else if (s === 'Solving' || s === 'Selesai') colorClass = 'bg-emerald-50 text-emerald-700 border-emerald-200';
+    else if (s === 'Closed') colorClass = 'bg-purple-50 text-purple-700 border-purple-300 font-bold';
+    else if (s === 'Take a Part') colorClass = 'bg-orange-50 text-orange-700 border-orange-200';
+    else if (s === 'Cancel' || s === 'Batal') colorClass = 'bg-rose-50 text-rose-700 border-rose-200';
+
+    return '<span class="px-2.5 py-0.5 rounded-full text-[10px] font-semibold border ' + colorClass + '">' + escapeHtml(s) + '</span>';
+  }
+
+  function openStatusModal(ticketId, currentStatus) {
+    activeActionTicketId = ticketId;
+    document.getElementById('status-modal-ticket-id').innerText = ticketId;
+    document.getElementById('select-new-status').value = currentStatus || 'Respon';
+    document.getElementById('input-status-note').value = '';
+    document.getElementById('modal-status-action').classList.remove('hidden');
+  }
+
+  function closeStatusModal() {
+    document.getElementById('modal-status-action').classList.add('hidden');
+    activeActionTicketId = null;
+  }
+
+  function confirmStatusUpdate() {
+    if (!activeActionTicketId) return;
+
+    var newStatus = document.getElementById('select-new-status').value;
+    var note = document.getElementById('input-status-note').value;
+    var ticketId = activeActionTicketId;
+
+    closeStatusModal();
+
+    if (typeof google !== 'undefined' && google.script && google.script.run) {
+      google.script.run
+        .withSuccessHandler(function(res) {
+          if (res && res.status === 'success') {
+            showToast('Status Diperbarui', 'Tiket ' + ticketId + ' diperbarui ke: ' + newStatus, 'success');
+            fetchTickets(currentPage);
+            loadDashboardMetrics();
+          } else {
+            showToast('Aksi Ditolak', res ? res.message : 'Gagal update status', 'error');
+          }
+        })
+        .withFailureHandler(function(err) {
+          showToast('Error', 'Gagal update status di backend: ' + err, 'error');
+        })
+        .updateTicketStatus(ticketId, newStatus, note, currentUser);
+    } else {
+      showToast('Status Diperbarui (Simulasi)', 'Tiket ' + ticketId + ' -> ' + newStatus, 'success');
+      fetchTickets(currentPage);
+    }
+  }
+
+  function debounceSearch() {
+    clearTimeout(searchDebounceTimer);
+    searchDebounceTimer = setTimeout(function() {
+      fetchTickets(1);
+    }, 350);
+  }
+
+  function changePage(direction) {
+    var target = currentPage + direction;
+    if (target >= 1 && target <= totalPages) {
+      fetchTickets(target);
+    }
+  }
+
+  function updatePaginationControls() {
+    var pagStart = totalItems === 0 ? 0 : ((currentPage - 1) * pageSize) + 1;
+    var pagEnd = Math.min(currentPage * pageSize, totalItems);
+
+    var sEl = document.getElementById('pag-start');
+    var eEl = document.getElementById('pag-end');
+    var tEl = document.getElementById('pag-total');
+    var cEl = document.getElementById('pag-current');
+
+    if (sEl) sEl.innerText = pagStart;
+    if (eEl) eEl.innerText = pagEnd;
+    if (tEl) tEl.innerText = totalItems;
+    if (cEl) cEl.innerText = currentPage + ' / ' + totalPages;
+
+    var btnPrev = document.getElementById('btn-prev-page');
+    var btnNext = document.getElementById('btn-next-page');
+    if (btnPrev) btnPrev.disabled = (currentPage <= 1);
+    if (btnNext) btnNext.disabled = (currentPage >= totalPages);
+  }
+
+  function renderDashboardRecent(tickets) {
+    var dashTbody = document.getElementById('dashboard-recent-tickets');
+    if (!dashTbody) return;
+
+    if (!tickets || tickets.length === 0) {
+      dashTbody.innerHTML = '<tr><td colspan="5" class="text-center py-6 text-slate-400 text-xs">Belum ada data tiket</td></tr>';
+      return;
+    }
+
+    var slice = tickets.slice(0, 5);
+    var html = '';
+    for (var i = 0; i < slice.length; i++) {
+      var item = slice[i];
+      html += '<tr class="hover:bg-white/60 transition">';
+      html += '<td class="p-3 font-mono font-semibold text-teal-700">' + escapeHtml(item.idTiket) + '</td>';
+      html += '<td class="p-3 font-medium text-slate-800">' + escapeHtml(item.bank) + '</td>';
+      html += '<td class="p-3 font-mono text-slate-500">' + escapeHtml(item.serialNumber) + '</td>';
+      html += '<td class="p-3 text-slate-700">' + escapeHtml(item.namaEngineer) + '</td>';
+      html += '<td class="p-3">' + getStatusBadgeHtml(item.statusTiket) + '</td>';
+      html += '</tr>';
+    }
+    dashTbody.innerHTML = html;
+  }
+
+  function loadDashboardMetrics() {
+    if (typeof google !== 'undefined' && google.script && google.script.run) {
+      google.script.run
+        .withSuccessHandler(function(res) {
+          if (res && res.status === 'success') {
+            var d = res.data;
+            document.getElementById('stat-total').innerText = d.totalTickets;
+            document.getElementById('stat-open').innerText = d.openTickets;
+            document.getElementById('stat-handling').innerText = d.handlingTickets;
+            document.getElementById('stat-solved').innerText = d.solvingTickets;
+
+            updateDistributionBars(d.totalTickets, d.solvingTickets, d.handlingTickets, d.openTickets);
+          }
+        })
+        .getSectionData('DashboardMetrics');
+    }
+  }
+
+  function updateDistributionBars(total, solved, handling, open) {
+    if (total <= 0) total = 1;
+    var pSolved = Math.round((solved / total) * 100);
+    var pHandling = Math.round((handling / total) * 100);
+    var pOpen = Math.round((open / total) * 100);
+
+    var distS = document.getElementById('dist-solving');
+    var barS = document.getElementById('dist-bar-solving');
+    var distH = document.getElementById('dist-handling');
+    var barH = document.getElementById('dist-bar-handling');
+    var distO = document.getElementById('dist-open');
+    var barO = document.getElementById('dist-bar-open');
+
+    if (distS) distS.innerText = pSolved + '%';
+    if (barS) barS.style.width = pSolved + '%';
+    if (distH) distH.innerText = pHandling + '%';
+    if (barH) barH.style.width = pHandling + '%';
+    if (distO) distO.innerText = pOpen + '%';
+    if (barO) barO.style.width = pOpen + '%';
+  }
+
   function loadDropdowns() {
     if (typeof google !== 'undefined' && google.script && google.script.run) {
       google.script.run
@@ -525,9 +952,6 @@
             cachedDropdowns = res.data;
             populateDropdownDOM();
           }
-        })
-        .withFailureHandler(function(err) {
-          console.error('Error loadDropdowns:', err);
         })
         .getDropdownData();
     }
@@ -607,8 +1031,7 @@
       var yy = String(now.getFullYear()).slice(-2);
       var mm = ('0' + (now.getMonth() + 1)).slice(-2);
       var dd = ('0' + now.getDate()).slice(-2);
-      var yymmdd = yy + mm + dd;
-      document.getElementById('input-ticket-id').value = yymmdd + '-0001';
+      document.getElementById('input-ticket-id').value = yy + mm + dd + '-0001';
       document.getElementById('input-ticket-date').value = now.toISOString().split('T')[0];
       document.getElementById('input-ticket-time').value = ('0' + now.getHours()).slice(-2) + ':' + ('0' + now.getMinutes()).slice(-2) + ':' + ('0' + now.getSeconds()).slice(-2);
     }
@@ -633,13 +1056,8 @@
       namaEngineer: String(document.getElementById('input-engineer').value).trim(),
       problem: String(document.getElementById('input-problem').value).trim(),
       note: String(document.getElementById('input-note').value).trim(),
-      statusTiket: 'Open',
-      updatedAt: 'Baru Saja'
+      statusTiket: 'Open'
     };
-
-    currentTicketsList.unshift(payload);
-    renderTicketsTable(currentTicketsList);
-    updateDashboardCountsOptimistic(1, 1, 0, 0);
 
     closeCreateTicketModal();
     showToast('Tiket Diterbitkan', 'Tiket ' + payload.idTiket + ' berhasil dibuat!', 'success');
@@ -647,285 +1065,13 @@
     if (typeof google !== 'undefined' && google.script && google.script.run) {
       google.script.run
         .withSuccessHandler(function(res) {
-          if (res && res.status !== 'success') {
-            showToast('Peringatan', res.message, 'error');
-          } else {
+          if (res && res.status === 'success') {
             fetchTickets(1);
             loadDashboardMetrics();
           }
         })
-        .withFailureHandler(function(err) {
-          showToast('Error', 'Gagal menyimpan ke Google Spreadsheet: ' + err, 'error');
-        })
         .createTicket(payload);
     }
-  }
-
-  function fetchTickets(page) {
-    currentPage = page || 1;
-    var searchEl = document.getElementById('filter-search');
-    var statusEl = document.getElementById('filter-status');
-    var bankEl = document.getElementById('filter-bank');
-
-    var searchVal = searchEl ? String(searchEl.value || '').trim() : '';
-    var statusVal = statusEl ? String(statusEl.value || 'ALL').trim() : 'ALL';
-    var bankVal = bankEl ? String(bankEl.value || 'ALL').trim() : 'ALL';
-
-    var tbody = document.getElementById('tickets-table-body');
-    if (tbody && (!currentTicketsList || currentTicketsList.length === 0)) {
-      tbody.innerHTML = '<tr><td colspan="8" class="text-center py-6 text-slate-400 font-mono text-xs"><i class="fa-solid fa-spinner fa-spin text-teal-600 mr-2"></i>Mengambil antrean tiket...</td></tr>';
-    }
-
-    if (typeof google !== 'undefined' && google.script && google.script.run) {
-      google.script.run
-        .withSuccessHandler(function(res) {
-          if (res && res.status === 'success') {
-            currentTicketsList = res.tickets || [];
-            currentPage = res.page || 1;
-            totalPages = res.totalPages || 1;
-            totalItems = res.totalItems || 0;
-            renderTicketsTable(currentTicketsList);
-            updatePaginationControls();
-          } else {
-            if (tbody) {
-              tbody.innerHTML = '<tr><td colspan="8" class="text-center py-6 text-rose-500 font-mono text-xs"><i class="fa-solid fa-triangle-exclamation mr-1"></i>Gagal memuat: ' + escapeHtml(res ? res.message : 'Database error') + '</td></tr>';
-            }
-          }
-        })
-        .withFailureHandler(function(err) {
-          if (tbody) {
-            tbody.innerHTML = '<tr><td colspan="8" class="text-center py-6 text-rose-500 font-mono text-xs"><i class="fa-solid fa-triangle-exclamation mr-1"></i>Koneksi backend terputus: ' + escapeHtml(String(err)) + '</td></tr>';
-          }
-          showToast('Gagal Memuat Tiket', 'Terjadi kendala koneksi ke database.', 'error');
-        })
-        .getTicketsPaginated(currentPage, pageSize, searchVal, statusVal, bankVal);
-    } else {
-      if (!currentTicketsList || currentTicketsList.length === 0) {
-        currentTicketsList = [
-          { idTiket: '260910-0001', bank: 'Bank Central Asia (BCA)', serialNumber: 'SN-BCA-99201', idMesin: 'ATM-BCA-01', tanggalTiket: '2026-09-10', jamTiket: '08:15:20', tipeTiket: 'Corrective Maintenance (CM)', namaEngineer: 'Rizky Hardiansyah', problem: 'Mesin Card Reader error code 42 (Card Jammed)', note: 'Prioritas tinggi, nasabah antre.', statusTiket: 'Handling', updatedAt: '2026-09-10 09:20:00' },
-          { idTiket: '260910-0002', bank: 'Bank Mandiri', serialNumber: 'SN-MDR-44011', idMesin: 'ATM-MDR-01', tanggalTiket: '2026-09-10', jamTiket: '09:30:10', tipeTiket: 'Preventive Maintenance (PM)', namaEngineer: 'Fajar Ramadhan', problem: 'Jadwal pembersihan modul dispenser & check sensor', note: 'PM Rutin Kuartal 3', statusTiket: 'Solving', updatedAt: '2026-09-10 11:00:00' },
-          { idTiket: '260910-0003', bank: 'Bank Rakyat Indonesia (BRI)', serialNumber: 'SN-BRI-11055', idMesin: 'ATM-BRI-01', tanggalTiket: '2026-09-10', jamTiket: '10:05:44', tipeTiket: 'Corrective Maintenance (CM)', namaEngineer: 'Dimas Kurniawan', problem: 'Receipt Printer Out of Paper & Cutter Jam', note: 'Kertas cadangan dibawa FSE', statusTiket: 'Appointment', updatedAt: '2026-09-10 10:15:00' }
-        ];
-      }
-      totalItems = currentTicketsList.length;
-      totalPages = 1;
-      renderTicketsTable(currentTicketsList);
-      updatePaginationControls();
-    }
-  }
-
-  function debounceSearch() {
-    clearTimeout(searchDebounceTimer);
-    searchDebounceTimer = setTimeout(function() {
-      fetchTickets(1);
-    }, 350);
-  }
-
-  function changePage(direction) {
-    var target = currentPage + direction;
-    if (target >= 1 && target <= totalPages) {
-      fetchTickets(target);
-    }
-  }
-
-  function updatePaginationControls() {
-    var pagStart = totalItems === 0 ? 0 : ((currentPage - 1) * pageSize) + 1;
-    var pagEnd = Math.min(currentPage * pageSize, totalItems);
-
-    var sEl = document.getElementById('pag-start');
-    var eEl = document.getElementById('pag-end');
-    var tEl = document.getElementById('pag-total');
-    var cEl = document.getElementById('pag-current');
-
-    if (sEl) sEl.innerText = pagStart;
-    if (eEl) eEl.innerText = pagEnd;
-    if (tEl) tEl.innerText = totalItems;
-    if (cEl) cEl.innerText = currentPage + ' / ' + totalPages;
-
-    var btnPrev = document.getElementById('btn-prev-page');
-    var btnNext = document.getElementById('btn-next-page');
-    if (btnPrev) btnPrev.disabled = (currentPage <= 1);
-    if (btnNext) btnNext.disabled = (currentPage >= totalPages);
-  }
-
-  function renderTicketsTable(tickets) {
-    var tbody = document.getElementById('tickets-table-body');
-    if (tbody) {
-      if (!tickets || tickets.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="8" class="text-center py-8 text-slate-400 font-mono text-xs"><i class="fa-solid fa-inbox text-2xl mb-2 block text-slate-300"></i>Tidak ada tiket di database yang cocok dengan filter</td></tr>';
-      } else {
-        var html = '';
-        for (var i = 0; i < tickets.length; i++) {
-          var t = tickets[i];
-          var badge = getStatusBadgeHtml(t.statusTiket);
-
-          html += '<tr class="hover:bg-white/80 transition">';
-          html += '<td class="p-3 font-mono font-bold text-teal-700 whitespace-nowrap">' + escapeHtml(t.idTiket) + '</td>';
-          html += '<td class="p-3">';
-          html += '<div class="font-semibold text-slate-800">' + escapeHtml(t.bank) + '</div>';
-          html += '<div class="text-[11px] text-slate-500 font-mono">' + escapeHtml(t.serialNumber) + ' (' + escapeHtml(t.idMesin) + ')</div>';
-          html += '</td>';
-          html += '<td class="p-3 whitespace-nowrap">';
-          html += '<div class="text-slate-700 font-mono">' + escapeHtml(t.tanggalTiket) + '</div>';
-          html += '<div class="text-[10px] text-slate-400 font-mono">' + escapeHtml(t.jamTiket) + '</div>';
-          html += '</td>';
-          html += '<td class="p-3 whitespace-nowrap text-slate-600">' + escapeHtml(t.tipeTiket) + '</td>';
-          html += '<td class="p-3 whitespace-nowrap">';
-          html += '<span class="px-2.5 py-1 rounded-lg bg-slate-100 border border-slate-200 text-slate-700 font-medium">' + escapeHtml(t.namaEngineer) + '</span>';
-          html += '</td>';
-          html += '<td class="p-3 max-w-xs">';
-          html += '<div class="font-medium text-slate-800 truncate" title="' + escapeHtml(t.problem) + '">' + escapeHtml(t.problem) + '</div>';
-          if (t.note) {
-            html += '<div class="text-[10px] text-slate-500 italic truncate" title="' + escapeHtml(t.note) + '">' + escapeHtml(t.note) + '</div>';
-          }
-          html += '</td>';
-          html += '<td class="p-3 whitespace-nowrap">' + badge + '</td>';
-          html += '<td class="p-3 text-center whitespace-nowrap">';
-          html += '<button onclick="openStatusModal(\'' + escapeHtml(t.idTiket) + '\', \'' + escapeHtml(t.statusTiket) + '\')" class="px-2.5 py-1 text-[11px] rounded-lg bg-teal-50 border border-teal-200 text-teal-700 hover:bg-teal-600 hover:text-white transition flex items-center gap-1.5 mx-auto font-medium shadow-sm">';
-          html += '<i class="fa-solid fa-bolt text-[10px]"></i> Aksi Lifecycle';
-          html += '</button>';
-          html += '</td>';
-          html += '</tr>';
-        }
-        tbody.innerHTML = html;
-      }
-    }
-
-    renderDashboardRecent(tickets);
-  }
-
-  function renderDashboardRecent(tickets) {
-    var dashTbody = document.getElementById('dashboard-recent-tickets');
-    if (!dashTbody) return;
-
-    if (!tickets || tickets.length === 0) {
-      dashTbody.innerHTML = '<tr><td colspan="5" class="text-center py-6 text-slate-400 text-xs">Belum ada data tiket di Spreadsheet</td></tr>';
-      return;
-    }
-
-    var slice = tickets.slice(0, 5);
-    var html = '';
-    for (var i = 0; i < slice.length; i++) {
-      var item = slice[i];
-      html += '<tr class="hover:bg-white/60 transition">';
-      html += '<td class="p-3 font-mono font-semibold text-teal-700">' + escapeHtml(item.idTiket) + '</td>';
-      html += '<td class="p-3 font-medium text-slate-800">' + escapeHtml(item.bank) + '</td>';
-      html += '<td class="p-3 font-mono text-slate-500">' + escapeHtml(item.serialNumber) + '</td>';
-      html += '<td class="p-3 text-slate-700">' + escapeHtml(item.namaEngineer) + '</td>';
-      html += '<td class="p-3">' + getStatusBadgeHtml(item.statusTiket) + '</td>';
-      html += '</tr>';
-    }
-    dashTbody.innerHTML = html;
-  }
-
-  function getStatusBadgeHtml(status) {
-    var s = String(status || '').trim();
-    var colorClass = 'bg-slate-100 text-slate-700 border-slate-200';
-
-    if (s === 'Open' || s === 'Baru') colorClass = 'bg-amber-50 text-amber-700 border-amber-200';
-    else if (s === 'Respon') colorClass = 'bg-sky-50 text-sky-700 border-sky-200';
-    else if (s === 'Appointment') colorClass = 'bg-indigo-50 text-indigo-700 border-indigo-200';
-    else if (s === 'Handling' || s === 'Proses') colorClass = 'bg-blue-50 text-blue-700 border-blue-200';
-    else if (s === 'Solving' || s === 'Selesai') colorClass = 'bg-emerald-50 text-emerald-700 border-emerald-200';
-    else if (s === 'Take a Part') colorClass = 'bg-orange-50 text-orange-700 border-orange-200';
-    else if (s === 'Cancel' || s === 'Batal') colorClass = 'bg-rose-50 text-rose-700 border-rose-200';
-
-    return '<span class="px-2.5 py-0.5 rounded-full text-[10px] font-semibold border ' + colorClass + '">' + escapeHtml(s) + '</span>';
-  }
-
-  function openStatusModal(ticketId, currentStatus) {
-    activeActionTicketId = ticketId;
-    document.getElementById('status-modal-ticket-id').innerText = ticketId;
-    document.getElementById('select-new-status').value = currentStatus || 'Respon';
-    document.getElementById('input-status-note').value = '';
-    document.getElementById('modal-status-action').classList.remove('hidden');
-  }
-
-  function closeStatusModal() {
-    document.getElementById('modal-status-action').classList.add('hidden');
-    activeActionTicketId = null;
-  }
-
-  function confirmStatusUpdate() {
-    if (!activeActionTicketId) return;
-
-    var newStatus = document.getElementById('select-new-status').value;
-    var note = document.getElementById('input-status-note').value;
-    var ticketId = activeActionTicketId;
-
-    for (var i = 0; i < currentTicketsList.length; i++) {
-      if (currentTicketsList[i].idTiket === ticketId) {
-        currentTicketsList[i].statusTiket = newStatus;
-        if (note) currentTicketsList[i].note += ' | [' + newStatus + ']: ' + note;
-        break;
-      }
-    }
-
-    renderTicketsTable(currentTicketsList);
-    closeStatusModal();
-    showToast('Status Diperbarui', 'Tiket ' + ticketId + ' diperbarui ke: ' + newStatus, 'success');
-
-    if (typeof google !== 'undefined' && google.script && google.script.run) {
-      google.script.run
-        .withSuccessHandler(function(res) {
-          if (res && res.status !== 'success') {
-            showToast('Peringatan', res.message, 'error');
-          } else {
-            fetchTickets(currentPage);
-            loadDashboardMetrics();
-          }
-        })
-        .withFailureHandler(function(err) {
-          showToast('Error', 'Gagal update status di backend: ' + err, 'error');
-        })
-        .updateTicketStatus(ticketId, newStatus, note);
-    }
-  }
-
-  function loadDashboardMetrics() {
-    if (typeof google !== 'undefined' && google.script && google.script.run) {
-      google.script.run
-        .withSuccessHandler(function(res) {
-          if (res && res.status === 'success') {
-            var d = res.data;
-            document.getElementById('stat-total').innerText = d.totalTickets;
-            document.getElementById('stat-open').innerText = d.openTickets;
-            document.getElementById('stat-handling').innerText = d.handlingTickets;
-            document.getElementById('stat-solved').innerText = d.solvingTickets;
-
-            updateDistributionBars(d.totalTickets, d.solvingTickets, d.handlingTickets, d.openTickets);
-          }
-        })
-        .getSectionData('DashboardMetrics');
-    }
-  }
-
-  function updateDashboardCountsOptimistic(addTotal, addOpen, addHandling, addSolved) {
-    var tEl = document.getElementById('stat-total');
-    var oEl = document.getElementById('stat-open');
-    if (tEl) tEl.innerText = (parseInt(tEl.innerText, 10) || 0) + addTotal;
-    if (oEl) oEl.innerText = (parseInt(oEl.innerText, 10) || 0) + addOpen;
-  }
-
-  function updateDistributionBars(total, solved, handling, open) {
-    if (total <= 0) total = 1;
-    var pSolved = Math.round((solved / total) * 100);
-    var pHandling = Math.round((handling / total) * 100);
-    var pOpen = Math.round((open / total) * 100);
-
-    var distS = document.getElementById('dist-solving');
-    var barS = document.getElementById('dist-bar-solving');
-    var distH = document.getElementById('dist-handling');
-    var barH = document.getElementById('dist-bar-handling');
-    var distO = document.getElementById('dist-open');
-    var barO = document.getElementById('dist-bar-open');
-
-    if (distS) distS.innerText = pSolved + '%';
-    if (barS) barS.style.width = pSolved + '%';
-    if (distH) distH.innerText = pHandling + '%';
-    if (barH) barH.style.width = pHandling + '%';
-    if (distO) distO.innerText = pOpen + '%';
-    if (barO) barO.style.width = pOpen + '%';
   }
 
   function loadSectionAuxiliaryData(section) {
@@ -946,27 +1092,183 @@
             if (section === 'ReportingFSE') renderReportingCards(res.data);
           }
         })
-        .withFailureHandler(function(err) {
-          console.error('Error loadSectionAuxiliaryData (' + section + '):', err);
-        })
         .getSectionData(section);
-    } else {
-      if (section === 'FSE') {
-        currentFSEList = [
-          { userId: 'USR-003', nama: 'Rizky Hardiansyah', wilayah: 'Jakarta Pusat & Barat', noHp: '081299881122', status: 'Aktif', jumlahMesin: 8, totalCM: 1, pmAchievement: '1 / 1 (100%)' },
-          { userId: 'USR-004', nama: 'Fajar Ramadhan', wilayah: 'Jakarta Selatan & Depok', noHp: '081377665544', status: 'Aktif', jumlahMesin: 6, totalCM: 0, pmAchievement: '1 / 1 (100%)' },
-          { userId: 'USR-005', nama: 'Dimas Kurniawan', wilayah: 'Jakarta Timur & Bekasi', noHp: '081733445566', status: 'Aktif', jumlahMesin: 7, totalCM: 1, pmAchievement: '0 / 1 (0%)' }
-        ];
-        renderFSETable(currentFSEList);
+    }
+  }
+
+  function renderFSETable(list) {
+    var tbody = document.getElementById('fse-table-body');
+    if (!tbody) return;
+
+    if (!list || list.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="8" class="text-center py-8 text-slate-400 font-mono text-xs"><i class="fa-solid fa-users-slash text-2xl mb-2 block text-slate-300"></i>Tidak ada data FSE</td></tr>';
+      return;
+    }
+
+    var isMonitoring = (currentUser && (currentUser.roleKey === 'monitoring' || currentUser.roleKey === 'admin'));
+    var html = '';
+
+    for (var i = 0; i < list.length; i++) {
+      var item = list[i];
+      var isAktif = (String(item.status || 'Aktif').toLowerCase() === 'aktif');
+      var statusBadge = isAktif
+        ? '<span class="px-2.5 py-0.5 rounded-full text-[10px] font-semibold border bg-emerald-50 text-emerald-700 border-emerald-200">Aktif</span>'
+        : '<span class="px-2.5 py-0.5 rounded-full text-[10px] font-semibold border bg-rose-50 text-rose-700 border-rose-200">Nonaktif</span>';
+
+      html += '<tr class="hover:bg-white/80 transition">';
+      html += '<td class="p-3 font-mono font-bold text-teal-700 whitespace-nowrap">' + escapeHtml(item.userId || ('USR-00' + (i + 1))) + '</td>';
+      html += '<td class="p-3">';
+      html += '<div class="font-semibold text-slate-800">' + escapeHtml(item.nama) + '</div>';
+      html += '<div class="text-[10px] text-slate-400 font-mono"><i class="fa-solid fa-phone mr-1"></i>' + escapeHtml(item.noHp || '-') + '</div>';
+      html += '</td>';
+      html += '<td class="p-3 text-slate-700 whitespace-nowrap">' + escapeHtml(item.wilayah || '-') + '</td>';
+      html += '<td class="p-3 text-center whitespace-nowrap"><span class="px-2.5 py-1 rounded-lg bg-teal-50 border border-teal-200 font-mono font-bold text-teal-800">' + (item.jumlahMesin || 0) + ' Mesin</span></td>';
+      html += '<td class="p-3 text-center whitespace-nowrap"><span class="px-2.5 py-1 rounded-lg bg-slate-100 border border-slate-200 font-mono font-bold text-slate-700">' + (item.totalCM || 0) + ' Tiket</span></td>';
+      html += '<td class="p-3 text-center whitespace-nowrap"><span class="px-2.5 py-1 rounded-lg bg-emerald-50 border border-emerald-200 font-mono font-bold text-emerald-700">' + escapeHtml(item.pmAchievement || '0 / 0 (100%)') + '</span></td>';
+      html += '<td class="p-3 text-center whitespace-nowrap">' + statusBadge + '</td>';
+      
+      if (isMonitoring) {
+        html += '<td class="p-3 text-center whitespace-nowrap">';
+        html += '<div class="flex items-center justify-center gap-1.5">';
+        html += '<button onclick="openEditFSEModal(\'' + escapeHtml(item.userId) + '\')" title="Edit Data FSE" class="px-2.5 py-1 rounded-lg bg-white border border-slate-200 text-teal-700 hover:bg-teal-50 transition shadow-sm font-medium text-[11px]">';
+        html += '<i class="fa-solid fa-pen-to-square text-[10px]"></i> Edit';
+        html += '</button>';
+        html += '<button onclick="handleToggleFSEStatus(\'' + escapeHtml(item.userId) + '\', \'' + escapeHtml(item.status || 'Aktif') + '\')" class="px-2 py-1 rounded-lg border text-[11px] transition shadow-sm font-medium ' + (isAktif ? 'bg-white border-slate-200 text-slate-500 hover:text-rose-600' : 'bg-emerald-50 border-emerald-200 text-emerald-700') + '">';
+        html += isAktif ? '<i class="fa-solid fa-power-off"></i>' : '<i class="fa-solid fa-check"></i>';
+        html += '</button>';
+        html += '</div>';
+        html += '</td>';
+      } else {
+        html += '<td class="p-3 text-center text-slate-400 text-[11px] italic">-</td>';
       }
-      if (section === 'DataPM') {
-        currentPMList = [
-          { idPM: 'PM-2601', idMesin: 'ATM-BCA-01', serialNumber: 'SN-BCA-99201', bank: 'Bank Central Asia (BCA)', lokasi: 'KCP Grand Indonesia Lt. 1', periode: 'Q3-2026', tanggalRencana: '2026-09-15', tanggalRealisasi: '-', engineer: 'Rizky Hardiansyah', status: 'Scheduled', catatan: 'Pembersihan modul presenter & sensor' },
-          { idPM: 'PM-2602', idMesin: 'ATM-MDR-01', serialNumber: 'SN-MDR-44011', bank: 'Bank Mandiri', lokasi: 'Plaza Senayan Ground Floor', periode: 'Q3-2026', tanggalRencana: '2026-09-10', tanggalRealisasi: '2026-09-10', engineer: 'Fajar Ramadhan', status: 'Completed', catatan: 'Pelumasan gear pick-up module & check firmware' },
-          { idPM: 'PM-2603', idMesin: 'ATM-BRI-01', serialNumber: 'SN-BRI-11055', bank: 'Bank Rakyat Indonesia (BRI)', lokasi: 'Pasar Tanah Abang Blok A', periode: 'Q3-2026', tanggalRencana: '2026-09-12', tanggalRealisasi: '-', engineer: 'Dimas Kurniawan', status: 'In Progress', catatan: 'Pengecekan UPS & power supply' }
-        ];
-        renderPMTable(currentPMList);
-      }
+
+      html += '</tr>';
+    }
+
+    tbody.innerHTML = html;
+  }
+
+  function handleFSESearchInput() {
+    var searchInput = document.getElementById('filter-fse-search');
+    var clearBtn = document.getElementById('btn-clear-fse-search');
+    var query = searchInput ? searchInput.value.trim() : '';
+
+    if (clearBtn) {
+      if (query.length > 0) clearBtn.classList.remove('hidden');
+      else clearBtn.classList.add('hidden');
+    }
+
+    var q = query.toLowerCase();
+    var filtered = currentFSEList.filter(function(item) {
+      return (
+        String(item.userId || '').toLowerCase().indexOf(q) !== -1 ||
+        String(item.nama || '').toLowerCase().indexOf(q) !== -1 ||
+        String(item.wilayah || '').toLowerCase().indexOf(q) !== -1 ||
+        String(item.noHp || '').toLowerCase().indexOf(q) !== -1
+      );
+    });
+
+    renderFSETable(filtered);
+  }
+
+  function clearFSESearch() {
+    var searchInput = document.getElementById('filter-fse-search');
+    var clearBtn = document.getElementById('btn-clear-fse-search');
+    if (searchInput) searchInput.value = '';
+    if (clearBtn) clearBtn.classList.add('hidden');
+    renderFSETable(currentFSEList);
+  }
+
+  function openCreateFSEModal() {
+    document.getElementById('form-new-fse').reset();
+    document.getElementById('modal-create-fse').classList.remove('hidden');
+  }
+
+  function closeCreateFSEModal() {
+    document.getElementById('modal-create-fse').classList.add('hidden');
+  }
+
+  function handleCreateFSESubmit(event) {
+    event.preventDefault();
+    var payload = {
+      nama: String(document.getElementById('input-fse-nama').value).trim(),
+      noHp: String(document.getElementById('input-fse-hp').value).trim(),
+      password: String(document.getElementById('input-fse-password').value).trim(),
+      wilayah: String(document.getElementById('input-fse-wilayah').value).trim(),
+      kelolaanMesin: parseInt(document.getElementById('input-fse-mesin').value, 10) || 0
+    };
+
+    closeCreateFSEModal();
+    showToast('FSE Didaftarkan', 'Akun FSE ' + payload.nama + ' berhasil dibuat!', 'success');
+
+    if (typeof google !== 'undefined' && google.script && google.script.run) {
+      google.script.run
+        .withSuccessHandler(function(res) {
+          if (res && res.status === 'success') {
+            loadSectionAuxiliaryData('FSE');
+            loadDropdowns();
+          }
+        })
+        .registerFSE(payload, currentUser);
+    }
+  }
+
+  function openEditFSEModal(userId) {
+    var target = currentFSEList.find(function(x) { return x.userId === userId; });
+    if (!target) return;
+
+    document.getElementById('edit-fse-userid').value = target.userId;
+    document.getElementById('edit-fse-nama').value = target.nama;
+    document.getElementById('edit-fse-hp').value = target.noHp;
+    document.getElementById('edit-fse-password').value = '';
+    document.getElementById('edit-fse-wilayah').value = target.wilayah;
+    document.getElementById('edit-fse-mesin').value = target.jumlahMesin || 0;
+    document.getElementById('edit-fse-status').value = target.status || 'Aktif';
+
+    document.getElementById('modal-edit-fse').classList.remove('hidden');
+  }
+
+  function closeEditFSEModal() {
+    document.getElementById('modal-edit-fse').classList.add('hidden');
+  }
+
+  function handleEditFSESubmit(event) {
+    event.preventDefault();
+    var payload = {
+      userId: document.getElementById('edit-fse-userid').value.trim(),
+      nama: document.getElementById('edit-fse-nama').value.trim(),
+      noHp: document.getElementById('edit-fse-hp').value.trim(),
+      password: document.getElementById('edit-fse-password').value.trim(),
+      wilayah: document.getElementById('edit-fse-wilayah').value.trim(),
+      kelolaanMesin: parseInt(document.getElementById('edit-fse-mesin').value, 10) || 0,
+      status: document.getElementById('edit-fse-status').value
+    };
+
+    closeEditFSEModal();
+    showToast('Data Diperbarui', 'Data FSE ' + payload.nama + ' berhasil diperbarui.', 'success');
+
+    if (typeof google !== 'undefined' && google.script && google.script.run) {
+      google.script.run
+        .withSuccessHandler(function(res) {
+          if (res && res.status === 'success') {
+            loadSectionAuxiliaryData('FSE');
+            loadDropdowns();
+          }
+        })
+        .updateFSE(payload, currentUser);
+    }
+  }
+
+  function handleToggleFSEStatus(userId, currentStatus) {
+    if (typeof google !== 'undefined' && google.script && google.script.run) {
+      google.script.run
+        .withSuccessHandler(function(res) {
+          if (res && res.status === 'success') {
+            loadSectionAuxiliaryData('FSE');
+            showToast('Status Diubah', res.message, 'success');
+          }
+        })
+        .toggleFSEStatus(userId, currentStatus, currentUser);
     }
   }
 
@@ -975,44 +1277,31 @@
     if (!tbody) return;
 
     if (!list || list.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="9" class="text-center py-8 text-slate-400 font-mono text-xs"><i class="fa-solid fa-calendar-xmark text-2xl mb-2 block text-slate-300"></i>Tidak ada data Preventive Maintenance ditemukan.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="9" class="text-center py-8 text-slate-400 font-mono text-xs"><i class="fa-solid fa-calendar-xmark text-2xl mb-2 block text-slate-300"></i>Tidak ada data PM</td></tr>';
       return;
     }
 
     var html = '';
     for (var i = 0; i < list.length; i++) {
       var item = list[i];
-      var st = String(item.status || 'Scheduled').trim();
-      var badgeClass = 'bg-slate-100 text-slate-700 border-slate-200';
-
-      if (st.toLowerCase() === 'scheduled') badgeClass = 'bg-sky-50 text-sky-700 border-sky-200';
-      else if (st.toLowerCase() === 'in progress') badgeClass = 'bg-amber-50 text-amber-700 border-amber-200';
-      else if (st.toLowerCase() === 'completed') badgeClass = 'bg-emerald-50 text-emerald-700 border-emerald-200';
-      else if (st.toLowerCase() === 'overdue') badgeClass = 'bg-rose-50 text-rose-700 border-rose-200';
-
       html += '<tr class="hover:bg-white/80 transition">';
       html += '<td class="p-3 font-mono font-bold text-teal-700 whitespace-nowrap">' + escapeHtml(item.idPM) + '</td>';
-      html += '<td class="p-3">';
-      html += '<div class="font-semibold text-slate-800">' + escapeHtml(item.bank) + '</div>';
-      html += '<div class="text-[11px] text-slate-500 font-mono">' + escapeHtml(item.serialNumber) + ' (' + escapeHtml(item.idMesin) + ')</div>';
-      html += '</td>';
-      html += '<td class="p-3 text-slate-600 max-w-xs truncate" title="' + escapeHtml(item.lokasi) + '">' + escapeHtml(item.lokasi) + '</td>';
-      html += '<td class="p-3 whitespace-nowrap font-mono text-slate-700">' + escapeHtml(item.periode) + '</td>';
-      html += '<td class="p-3 whitespace-nowrap font-mono text-slate-600">' + escapeHtml(item.tanggalRencana) + '</td>';
-      html += '<td class="p-3 whitespace-nowrap font-mono text-slate-800 font-semibold">' + escapeHtml(item.tanggalRealisasi) + '</td>';
-      html += '<td class="p-3 whitespace-nowrap"><span class="px-2 py-0.5 rounded-lg bg-slate-100 border border-slate-200 text-slate-700">' + escapeHtml(item.engineer) + '</span></td>';
-      html += '<td class="p-3 whitespace-nowrap"><span class="px-2.5 py-0.5 rounded-full text-[10px] font-semibold border ' + badgeClass + '">' + escapeHtml(st) + '</span></td>';
-      html += '<td class="p-3 max-w-xs text-[11px] text-slate-500 truncate" title="' + escapeHtml(item.catatan) + '">' + escapeHtml(item.catatan || '-') + '</td>';
+      html += '<td class="p-3"><div class="font-semibold text-slate-800">' + escapeHtml(item.bank) + '</div><div class="text-[11px] text-slate-500 font-mono">' + escapeHtml(item.serialNumber) + '</div></td>';
+      html += '<td class="p-3 text-slate-600 max-w-xs truncate">' + escapeHtml(item.lokasi) + '</td>';
+      html += '<td class="p-3 font-mono text-slate-700">' + escapeHtml(item.periode) + '</td>';
+      html += '<td class="p-3 font-mono text-slate-600">' + escapeHtml(item.tanggalRencana) + '</td>';
+      html += '<td class="p-3 font-mono text-slate-800 font-semibold">' + escapeHtml(item.tanggalRealisasi) + '</td>';
+      html += '<td class="p-3"><span class="px-2 py-0.5 rounded-lg bg-slate-100 border border-slate-200 text-slate-700">' + escapeHtml(item.engineer) + '</span></td>';
+      html += '<td class="p-3"><span class="px-2.5 py-0.5 rounded-full text-[10px] font-semibold border bg-emerald-50 text-emerald-700 border-emerald-200">' + escapeHtml(item.status) + '</span></td>';
+      html += '<td class="p-3 text-[11px] text-slate-500 truncate">' + escapeHtml(item.catatan || '-') + '</td>';
       html += '</tr>';
     }
-
     tbody.innerHTML = html;
   }
 
   function filterPMTableClientSide() {
     var searchEl = document.getElementById('filter-pm-search');
     var statusEl = document.getElementById('filter-pm-status');
-
     var s = searchEl ? searchEl.value.toLowerCase().trim() : '';
     var st = statusEl ? statusEl.value.trim() : 'ALL';
 
@@ -1023,7 +1312,6 @@
           item.idPM.toLowerCase().indexOf(s) !== -1 ||
           item.bank.toLowerCase().indexOf(s) !== -1 ||
           item.serialNumber.toLowerCase().indexOf(s) !== -1 ||
-          item.idMesin.toLowerCase().indexOf(s) !== -1 ||
           item.lokasi.toLowerCase().indexOf(s) !== -1 ||
           item.engineer.toLowerCase().indexOf(s) !== -1
         );
@@ -1038,18 +1326,14 @@
   function renderMachinesTable(list) {
     var tbody = document.getElementById('machines-table-body');
     if (!tbody) return;
-
-    if (!list || list.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="6" class="text-center py-6 text-slate-400 text-xs">Belum ada data mesin terdaftar di sheet Machines.</td></tr>';
-      return;
-    }
+    if (!list || list.length === 0) return;
 
     var html = '';
     for (var i = 0; i < list.length; i++) {
       var m = list[i];
       html += '<tr class="hover:bg-white/80 transition">';
       html += '<td class="p-3 font-mono font-bold text-teal-700">' + escapeHtml(m.idMesin) + '</td>';
-      html += '<td class="p-3 font-mono text-slate-800 font-medium">' + escapeHtml(m.serialNumber) + '</td>';
+      html += '<td class="p-3 font-mono text-slate-800">' + escapeHtml(m.serialNumber) + '</td>';
       html += '<td class="p-3 text-slate-700">' + escapeHtml(m.bank) + '</td>';
       html += '<td class="p-3 text-slate-600">' + escapeHtml(m.lokasi) + '</td>';
       html += '<td class="p-3 text-slate-500">' + escapeHtml(m.tipe) + '</td>';
@@ -1062,11 +1346,7 @@
   function renderCustomersTable(list) {
     var tbody = document.getElementById('customers-table-body');
     if (!tbody) return;
-
-    if (!list || list.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="6" class="text-center py-6 text-slate-400 text-xs">Belum ada data nasabah bank di sheet Customers.</td></tr>';
-      return;
-    }
+    if (!list || list.length === 0) return;
 
     var html = '';
     for (var i = 0; i < list.length; i++) {
@@ -1085,21 +1365,11 @@
 
   function renderReportingCards(list) {
     var container = document.getElementById('reporting-cards-container');
-    if (!container) return;
-
-    var reports = list || [];
-    if (reports.length === 0 && cachedDropdowns.engineers) {
-      reports = cachedDropdowns.engineers;
-    }
-
-    if (reports.length === 0) {
-      container.innerHTML = '<div class="col-span-3 text-center py-8 text-slate-400 text-xs">Belum ada data laporan FSE.</div>';
-      return;
-    }
+    if (!container || !list) return;
 
     var html = '';
-    for (var i = 0; i < reports.length; i++) {
-      var eng = reports[i];
+    for (var i = 0; i < list.length; i++) {
+      var eng = list[i];
       html += '<div class="soft-card-panel p-4">';
       html += '<div class="flex justify-between items-center mb-3">';
       html += '<span class="font-bold text-sm text-slate-800">' + escapeHtml(eng.nama) + '</span>';
@@ -1108,7 +1378,6 @@
       html += '<div class="space-y-2 text-xs text-slate-600">';
       html += '<div class="flex justify-between"><span>Tiket Ditugaskan:</span><span class="font-bold text-slate-800">' + (eng.totalAssigned || 0) + ' Tiket</span></div>';
       html += '<div class="flex justify-between"><span>Tiket Selesai (Solving):</span><span class="font-bold text-emerald-600">' + (eng.totalSolving || 0) + ' Tiket</span></div>';
-      html += '<div class="flex justify-between"><span>Rata-rata Resolusi:</span><span class="font-mono text-slate-800 font-medium">' + escapeHtml(eng.avgResolutionTime || '2.4 Jam') + '</span></div>';
       html += '<div class="flex justify-between"><span>Area Tugas:</span><span class="text-slate-500">' + escapeHtml(eng.wilayah || 'DKI Jakarta') + '</span></div>';
       html += '</div>';
       html += '</div>';
@@ -1168,10 +1437,6 @@
     setTimeout(function() {
       toast.classList.add('translate-y-20', 'opacity-0', 'pointer-events-none');
     }, 4000);
-  }
-
-  function exportReportNotice() {
-    showToast('Export Dimulai', 'Mempersiapkan data laporan FSE format CSV/Spreadsheet...', 'success');
   }
 
   function escapeHtml(string) {

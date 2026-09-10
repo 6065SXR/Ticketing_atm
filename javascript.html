@@ -1,0 +1,980 @@
+<script>
+  var currentSection = 'Dashboard';
+  var currentPage = 1;
+  var pageSize = 10;
+  var totalPages = 1;
+  var totalItems = 0;
+  var searchDebounceTimer = null;
+  var isSidebarCollapsed = false;
+
+  var currentUser = null;
+
+  var cachedDropdowns = {
+    banks: [],
+    machines: [],
+    engineers: []
+  };
+
+  var currentTicketsList = [];
+  var currentPMList = [];
+  var currentFSEList = [];
+  var activeActionTicketId = null;
+
+  window.onload = function() {
+    startLiveClock();
+  };
+
+  function togglePasswordVisibility() {
+    var passInput = document.getElementById('login-password');
+    var eyeIcon = document.getElementById('eye-icon');
+    if (!passInput) return;
+
+    if (passInput.type === 'password') {
+      passInput.type = 'text';
+      if (eyeIcon) eyeIcon.className = 'fa-regular fa-eye-slash absolute right-3.5 top-3 text-teal-600 cursor-pointer';
+    } else {
+      passInput.type = 'password';
+      if (eyeIcon) eyeIcon.className = 'fa-regular fa-eye absolute right-3.5 top-3 text-slate-400 cursor-pointer hover:text-slate-600';
+    }
+  }
+
+  function quickLoginDemo(role) {
+    var demoCredentials = {
+      monitoring: { hp: '081200000002', pass: 'monitoring123' },
+      fse: { hp: '081299881122', pass: 'fse123' },
+      admin: { hp: '081100000001', pass: 'admin123' }
+    };
+
+    var target = demoCredentials[role] || demoCredentials.monitoring;
+    document.getElementById('login-username').value = target.hp;
+    document.getElementById('login-password').value = target.pass;
+
+    handleLoginProcess(target.hp, target.pass);
+  }
+
+  function handleLoginSubmit(event) {
+    event.preventDefault();
+    var inputHp = document.getElementById('login-username').value.trim();
+    var inputPass = document.getElementById('login-password').value.trim();
+
+    handleLoginProcess(inputHp, inputPass);
+  }
+
+  function handleLoginProcess(hp, pass) {
+    var btn = document.getElementById('btn-login-submit');
+    var btnText = document.getElementById('btn-login-text');
+    if (btn) btn.disabled = true;
+    if (btnText) btnText.innerText = 'Memverifikasi Kredensial...';
+
+    if (typeof google !== 'undefined' && google.script && google.script.run) {
+      google.script.run
+        .withSuccessHandler(function(res) {
+          if (btn) btn.disabled = false;
+          if (btnText) btnText.innerText = 'Masuk ke Sistem';
+
+          if (res && res.status === 'success') {
+            executeLogin(res.user);
+          } else {
+            showToast('Gagal Masuk', res ? res.message : 'Kredensial tidak cocok', 'error');
+          }
+        })
+        .withFailureHandler(function(err) {
+          if (btn) btn.disabled = false;
+          if (btnText) btnText.innerText = 'Masuk ke Sistem';
+          showToast('Error Server', 'Kendala koneksi backend: ' + err, 'error');
+        })
+        .authenticateUser(hp, pass);
+    } else {
+      if (btn) btn.disabled = false;
+      if (btnText) btnText.innerText = 'Masuk ke Sistem';
+
+      var fallbackUser = {
+        userId: 'USR-LOCAL',
+        name: (hp === '081299881122') ? 'Rizky Hardiansyah' : 'Monitoring Officer',
+        noHp: hp,
+        roleKey: (hp === '081299881122') ? 'fse' : 'monitoring',
+        roleTitle: (hp === '081299881122') ? 'Field Service Engineer' : 'Monitoring Officer',
+        initials: (hp === '081299881122') ? 'RH' : 'MO',
+        wilayah: 'DKI Jakarta',
+        indicator: (hp === '081299881122') ? 'FIELD SERVICE OPS' : 'NOC ATM MONITORING'
+      };
+      executeLogin(fallbackUser);
+    }
+  }
+
+  function executeLogin(userObj) {
+    currentUser = userObj;
+
+    document.getElementById('user-profile-name').innerText = userObj.name;
+    document.getElementById('user-profile-role').innerText = userObj.roleTitle;
+    document.getElementById('user-avatar-badge').innerText = userObj.initials;
+    document.getElementById('sidebar-role-indicator').innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span><span class="truncate">' + escapeHtml(userObj.indicator) + '</span>';
+
+    applyRolePermissions(userObj);
+
+    document.getElementById('login-view').classList.add('hidden');
+    document.getElementById('app-viewport').classList.remove('hidden');
+
+    loadDropdowns();
+    fetchTickets(1);
+    loadDashboardMetrics();
+    loadSectionAuxiliaryData('FSE');
+    loadSectionAuxiliaryData('DataPM');
+    loadSectionAuxiliaryData('DatabaseMesin');
+    loadSectionAuxiliaryData('DatabaseCustomer');
+    renderKPIScorecards();
+
+    showToast('Login Berhasil', 'Selamat datang, ' + userObj.name + ' (' + userObj.roleTitle + ')', 'success');
+  }
+
+  function applyRolePermissions(userObj) {
+    var isMonitoring = (userObj && (userObj.roleKey === 'monitoring' || userObj.roleKey === 'admin'));
+    var fseBtnContainer = document.getElementById('container-monitoring-fse-action');
+
+    if (fseBtnContainer) {
+      if (isMonitoring) {
+        fseBtnContainer.classList.remove('hidden');
+      } else {
+        fseBtnContainer.classList.add('hidden');
+      }
+    }
+  }
+
+  function handleLogout() {
+    currentUser = null;
+    document.getElementById('app-viewport').classList.add('hidden');
+    document.getElementById('login-view').classList.remove('hidden');
+    showToast('Sesi Berakhir', 'Anda telah keluar dari aplikasi.', 'success');
+  }
+
+  function openCreateFSEModal() {
+    if (!currentUser || (currentUser.roleKey !== 'monitoring' && currentUser.roleKey !== 'admin')) {
+      showToast('Akses Ditolak', 'Hanya role Monitoring yang diizinkan mendaftarkan FSE baru!', 'error');
+      return;
+    }
+    document.getElementById('form-new-fse').reset();
+    document.getElementById('modal-create-fse').classList.remove('hidden');
+  }
+
+  function closeCreateFSEModal() {
+    document.getElementById('modal-create-fse').classList.add('hidden');
+    document.getElementById('form-new-fse').reset();
+  }
+
+  function handleCreateFSESubmit(event) {
+    event.preventDefault();
+
+    if (!currentUser || (currentUser.roleKey !== 'monitoring' && currentUser.roleKey !== 'admin')) {
+      showToast('Akses Ditolak', 'Hanya role Monitoring yang berhak mendaftarkan FSE!', 'error');
+      return;
+    }
+
+    var payload = {
+      nama: String(document.getElementById('input-fse-nama').value).trim(),
+      noHp: String(document.getElementById('input-fse-hp').value).trim(),
+      password: String(document.getElementById('input-fse-password').value).trim(),
+      wilayah: String(document.getElementById('input-fse-wilayah').value).trim()
+    };
+
+    var optimisticFSE = {
+      id: 'ENG-0' + (currentFSEList.length + 1),
+      nama: payload.nama,
+      wilayah: payload.wilayah,
+      noHp: payload.noHp,
+      status: 'Aktif'
+    };
+
+    currentFSEList.unshift(optimisticFSE);
+    if (!cachedDropdowns.engineers) cachedDropdowns.engineers = [];
+    cachedDropdowns.engineers.unshift(optimisticFSE);
+    renderFSECards(currentFSEList);
+    populateDropdownDOM();
+
+    closeCreateFSEModal();
+    showToast('FSE Didaftarkan', 'Akun FSE ' + payload.nama + ' (' + payload.noHp + ') berhasil dibuat!', 'success');
+
+    if (typeof google !== 'undefined' && google.script && google.script.run) {
+      google.script.run
+        .withSuccessHandler(function(res) {
+          if (res && res.status === 'success') {
+            loadSectionAuxiliaryData('FSE');
+            loadDropdowns();
+          } else {
+            showToast('Peringatan', res ? res.message : 'Gagal simpan ke sheet', 'error');
+          }
+        })
+        .withFailureHandler(function(err) {
+          showToast('Error', 'Gagal mendaftarkan FSE: ' + err, 'error');
+        })
+        .registerFSE(payload, currentUser);
+    }
+  }
+
+  function toggleSidebar() {
+    var sidebar = document.getElementById('app-sidebar');
+    var toggleIcon = document.getElementById('toggle-sidebar-icon');
+    isSidebarCollapsed = !isSidebarCollapsed;
+
+    if (isSidebarCollapsed) {
+      sidebar.classList.add('sidebar-collapsed');
+      toggleIcon.className = 'fa-solid fa-angles-right text-xs';
+    } else {
+      sidebar.classList.remove('sidebar-collapsed');
+      toggleIcon.className = 'fa-solid fa-bars-staggered text-xs';
+    }
+  }
+
+  function startLiveClock() {
+    setInterval(function() {
+      var now = new Date();
+      var h = ('0' + now.getHours()).slice(-2);
+      var m = ('0' + now.getMinutes()).slice(-2);
+      var s = ('0' + now.getSeconds()).slice(-2);
+      var el = document.getElementById('live-clock');
+      if (el) el.innerText = h + ':' + m + ':' + s + ' WIB';
+    }, 1000);
+  }
+
+  function navigateTo(sectionId) {
+    currentSection = sectionId;
+
+    var navItems = document.querySelectorAll('.soft-nav-pill');
+    for (var i = 0; i < navItems.length; i++) {
+      navItems[i].classList.remove('active');
+    }
+    var targetNav = document.getElementById('nav-' + sectionId);
+    if (targetNav) targetNav.classList.add('active');
+
+    var views = document.querySelectorAll('.view-section');
+    for (var j = 0; j < views.length; j++) {
+      views[j].classList.add('hidden');
+    }
+    var activeView = document.getElementById('sec-' + sectionId);
+    if (activeView) activeView.classList.remove('hidden');
+
+    var titleEl = document.getElementById('section-title');
+    var subTitleEl = document.getElementById('section-subtitle');
+
+    var metadata = {
+      Dashboard: { title: 'DASHBOARD MONITORING', sub: 'Live Telemetry & ATM Maintenance Incident Dispatcher' },
+      FSE: { title: 'DATA FIELD SERVICE ENGINEER', sub: 'Direktori & Status Ketersediaan Teknisi Lapangan' },
+      Ticket: { title: 'MANAJEMEN TIKET & DISPATCH', sub: 'Pelacakan Antrean Tiket dan Aksi Lifecycle Status' },
+      DataPM: { title: 'DATA PREVENTIVE MAINTENANCE (PM)', sub: 'Monitoring Jadwal & Riwayat Servis Berkala Mesin ATM' },
+      DatabaseMesin: { title: 'DATABASE MESIN ATM', sub: 'Registrasi Aset & Inventaris Mesin ATM Perbankan' },
+      DatabaseCustomer: { title: 'DATABASE CUSTOMER BANK', sub: 'Daftar Mitra Bank & Informasi Kontak PIC' },
+      ReportingFSE: { title: 'REPORTING PRODUKTIVITAS FSE', sub: 'Agregasi Penyelesaian Tiket & Analisis MTTR' },
+      SLAAchievement: { title: 'SERVICE LEVEL AGREEMENT (SLA)', sub: 'Kepatuhan Respon & Kecepatan Solving Insiden' },
+      KPIAchievement: { title: 'KPI ACHIEVEMENT SCORECARD', sub: 'Evaluasi Kinerja Petugas Monitoring & Tim FSE' }
+    };
+
+    if (titleEl && metadata[sectionId]) {
+      titleEl.innerText = metadata[sectionId].title;
+      subTitleEl.innerText = metadata[sectionId].sub;
+    }
+
+    if (sectionId === 'Ticket') {
+      fetchTickets(currentPage || 1);
+    } else if (sectionId === 'Dashboard') {
+      loadDashboardMetrics();
+      fetchTickets(1);
+    } else if (sectionId === 'DataPM') {
+      loadSectionAuxiliaryData('DataPM');
+    } else if (sectionId === 'FSE') {
+      loadSectionAuxiliaryData('FSE');
+      if (currentUser) applyRolePermissions(currentUser);
+    } else if (sectionId === 'DatabaseMesin') {
+      loadSectionAuxiliaryData('DatabaseMesin');
+    } else if (sectionId === 'DatabaseCustomer') {
+      loadSectionAuxiliaryData('DatabaseCustomer');
+    } else if (sectionId === 'ReportingFSE') {
+      loadSectionAuxiliaryData('ReportingFSE');
+    }
+  }
+
+  function loadDropdowns() {
+    if (typeof google !== 'undefined' && google.script && google.script.run) {
+      google.script.run
+        .withSuccessHandler(function(res) {
+          if (res && res.status === 'success') {
+            cachedDropdowns = res.data;
+            populateDropdownDOM();
+          }
+        })
+        .withFailureHandler(function(err) {
+          console.error('Error loadDropdowns:', err);
+        })
+        .getDropdownData();
+    }
+  }
+
+  function populateDropdownDOM() {
+    var filterBank = document.getElementById('filter-bank');
+    if (filterBank && cachedDropdowns.banks) {
+      var optionsHtml = '<option value="ALL">Semua Bank</option>';
+      for (var i = 0; i < cachedDropdowns.banks.length; i++) {
+        optionsHtml += '<option value="' + escapeHtml(cachedDropdowns.banks[i]) + '">' + escapeHtml(cachedDropdowns.banks[i]) + '</option>';
+      }
+      filterBank.innerHTML = optionsHtml;
+    }
+
+    var inputBank = document.getElementById('input-bank');
+    if (inputBank && cachedDropdowns.banks) {
+      var formBankHtml = '<option value="">-- Pilih Bank Customer --</option>';
+      for (var j = 0; j < cachedDropdowns.banks.length; j++) {
+        formBankHtml += '<option value="' + escapeHtml(cachedDropdowns.banks[j]) + '">' + escapeHtml(cachedDropdowns.banks[j]) + '</option>';
+      }
+      inputBank.innerHTML = formBankHtml;
+    }
+
+    var inputEng = document.getElementById('input-engineer');
+    if (inputEng && cachedDropdowns.engineers) {
+      var engHtml = '<option value="">-- Pilih Field Service Engineer --</option>';
+      for (var k = 0; k < cachedDropdowns.engineers.length; k++) {
+        var eng = cachedDropdowns.engineers[k];
+        engHtml += '<option value="' + escapeHtml(eng.nama) + '">' + escapeHtml(eng.nama) + ' (' + escapeHtml(eng.wilayah || 'DKI') + ')</option>';
+      }
+      inputEng.innerHTML = engHtml;
+    }
+  }
+
+  function filterMachinesByBank() {
+    var selectedBank = document.getElementById('input-bank').value;
+    var snSelect = document.getElementById('input-serial-number');
+    var idMesinInput = document.getElementById('input-machine-id');
+    idMesinInput.value = '';
+
+    var snHtml = '<option value="">-- Pilih Serial Number --</option>';
+    if (cachedDropdowns.machines) {
+      for (var i = 0; i < cachedDropdowns.machines.length; i++) {
+        var m = cachedDropdowns.machines[i];
+        if (!selectedBank || m.bank === selectedBank) {
+          snHtml += '<option value="' + escapeHtml(m.serialNumber) + '" data-id="' + escapeHtml(m.idMesin) + '">' + escapeHtml(m.serialNumber) + ' - ' + escapeHtml(m.lokasi) + '</option>';
+        }
+      }
+    }
+    snSelect.innerHTML = snHtml;
+  }
+
+  function onSerialNumberSelected() {
+    var snSelect = document.getElementById('input-serial-number');
+    var selectedOption = snSelect.options[snSelect.selectedIndex];
+    var machineId = selectedOption ? selectedOption.getAttribute('data-id') : '';
+    document.getElementById('input-machine-id').value = machineId || '';
+  }
+
+  function openCreateTicketModal() {
+    var modal = document.getElementById('modal-create-ticket');
+    modal.classList.remove('hidden');
+
+    if (typeof google !== 'undefined' && google.script && google.script.run) {
+      google.script.run
+        .withSuccessHandler(function(res) {
+          if (res && res.status === 'success') {
+            document.getElementById('input-ticket-id').value = res.ticketId;
+            document.getElementById('input-ticket-date').value = res.dateString;
+            document.getElementById('input-ticket-time').value = res.timeString;
+          }
+        })
+        .generateNewTicketNumber();
+    } else {
+      var now = new Date();
+      var yy = String(now.getFullYear()).slice(-2);
+      var mm = ('0' + (now.getMonth() + 1)).slice(-2);
+      var dd = ('0' + now.getDate()).slice(-2);
+      var yymmdd = yy + mm + dd;
+      document.getElementById('input-ticket-id').value = yymmdd + '-0001';
+      document.getElementById('input-ticket-date').value = now.toISOString().split('T')[0];
+      document.getElementById('input-ticket-time').value = ('0' + now.getHours()).slice(-2) + ':' + ('0' + now.getMinutes()).slice(-2) + ':' + ('0' + now.getSeconds()).slice(-2);
+    }
+  }
+
+  function closeCreateTicketModal() {
+    document.getElementById('modal-create-ticket').classList.add('hidden');
+    document.getElementById('form-new-ticket').reset();
+  }
+
+  function handleFormSubmit(event) {
+    event.preventDefault();
+
+    var payload = {
+      idTiket: String(document.getElementById('input-ticket-id').value).trim(),
+      bank: String(document.getElementById('input-bank').value).trim(),
+      serialNumber: String(document.getElementById('input-serial-number').value).trim(),
+      idMesin: String(document.getElementById('input-machine-id').value).trim(),
+      tanggalTiket: String(document.getElementById('input-ticket-date').value).trim(),
+      jamTiket: String(document.getElementById('input-ticket-time').value).trim(),
+      tipeTiket: String(document.getElementById('input-ticket-type').value).trim(),
+      namaEngineer: String(document.getElementById('input-engineer').value).trim(),
+      problem: String(document.getElementById('input-problem').value).trim(),
+      note: String(document.getElementById('input-note').value).trim(),
+      statusTiket: 'Open',
+      updatedAt: 'Baru Saja'
+    };
+
+    currentTicketsList.unshift(payload);
+    renderTicketsTable(currentTicketsList);
+    updateDashboardCountsOptimistic(1, 1, 0, 0);
+
+    closeCreateTicketModal();
+    showToast('Tiket Diterbitkan', 'Tiket ' + payload.idTiket + ' berhasil dibuat!', 'success');
+
+    if (typeof google !== 'undefined' && google.script && google.script.run) {
+      google.script.run
+        .withSuccessHandler(function(res) {
+          if (res && res.status !== 'success') {
+            showToast('Peringatan', res.message, 'error');
+          } else {
+            fetchTickets(1);
+            loadDashboardMetrics();
+          }
+        })
+        .withFailureHandler(function(err) {
+          showToast('Error', 'Gagal menyimpan ke Google Spreadsheet: ' + err, 'error');
+        })
+        .createTicket(payload);
+    }
+  }
+
+  function fetchTickets(page) {
+    currentPage = page || 1;
+    var searchEl = document.getElementById('filter-search');
+    var statusEl = document.getElementById('filter-status');
+    var bankEl = document.getElementById('filter-bank');
+
+    var searchVal = searchEl ? String(searchEl.value || '').trim() : '';
+    var statusVal = statusEl ? String(statusEl.value || 'ALL').trim() : 'ALL';
+    var bankVal = bankEl ? String(bankEl.value || 'ALL').trim() : 'ALL';
+
+    var tbody = document.getElementById('tickets-table-body');
+    if (tbody && (!currentTicketsList || currentTicketsList.length === 0)) {
+      tbody.innerHTML = '<tr><td colspan="8" class="text-center py-6 text-slate-400 font-mono text-xs"><i class="fa-solid fa-spinner fa-spin text-teal-600 mr-2"></i>Mengambil antrean tiket...</td></tr>';
+    }
+
+    if (typeof google !== 'undefined' && google.script && google.script.run) {
+      google.script.run
+        .withSuccessHandler(function(res) {
+          if (res && res.status === 'success') {
+            currentTicketsList = res.tickets || [];
+            currentPage = res.page || 1;
+            totalPages = res.totalPages || 1;
+            totalItems = res.totalItems || 0;
+            renderTicketsTable(currentTicketsList);
+            updatePaginationControls();
+          } else {
+            if (tbody) {
+              tbody.innerHTML = '<tr><td colspan="8" class="text-center py-6 text-rose-500 font-mono text-xs"><i class="fa-solid fa-triangle-exclamation mr-1"></i>Gagal memuat: ' + escapeHtml(res ? res.message : 'Database error') + '</td></tr>';
+            }
+          }
+        })
+        .withFailureHandler(function(err) {
+          if (tbody) {
+            tbody.innerHTML = '<tr><td colspan="8" class="text-center py-6 text-rose-500 font-mono text-xs"><i class="fa-solid fa-triangle-exclamation mr-1"></i>Koneksi backend terputus: ' + escapeHtml(String(err)) + '</td></tr>';
+          }
+          showToast('Gagal Memuat Tiket', 'Terjadi kendala koneksi ke database.', 'error');
+        })
+        .getTicketsPaginated(currentPage, pageSize, searchVal, statusVal, bankVal);
+    } else {
+      if (!currentTicketsList || currentTicketsList.length === 0) {
+        currentTicketsList = [
+          { idTiket: '260910-0001', bank: 'Bank Central Asia (BCA)', serialNumber: 'SN-BCA-99201', idMesin: 'ATM-BCA-01', tanggalTiket: '2026-09-10', jamTiket: '08:15:20', tipeTiket: 'Corrective Maintenance (CM)', namaEngineer: 'Rizky Hardiansyah', problem: 'Mesin Card Reader error code 42 (Card Jammed)', note: 'Prioritas tinggi, nasabah antre.', statusTiket: 'Handling', updatedAt: '2026-09-10 09:20:00' },
+          { idTiket: '260910-0002', bank: 'Bank Mandiri', serialNumber: 'SN-MDR-44011', idMesin: 'ATM-MDR-01', tanggalTiket: '2026-09-10', jamTiket: '09:30:10', tipeTiket: 'Preventive Maintenance (PM)', namaEngineer: 'Fajar Ramadhan', problem: 'Jadwal pembersihan modul dispenser & check sensor', note: 'PM Rutin Kuartal 3', statusTiket: 'Solving', updatedAt: '2026-09-10 11:00:00' },
+          { idTiket: '260910-0003', bank: 'Bank Rakyat Indonesia (BRI)', serialNumber: 'SN-BRI-11055', idMesin: 'ATM-BRI-01', tanggalTiket: '2026-09-10', jamTiket: '10:05:44', tipeTiket: 'Corrective Maintenance (CM)', namaEngineer: 'Dimas Kurniawan', problem: 'Receipt Printer Out of Paper & Cutter Jam', note: 'Kertas cadangan dibawa FSE', statusTiket: 'Appointment', updatedAt: '2026-09-10 10:15:00' }
+        ];
+      }
+      totalItems = currentTicketsList.length;
+      totalPages = 1;
+      renderTicketsTable(currentTicketsList);
+      updatePaginationControls();
+    }
+  }
+
+  function debounceSearch() {
+    clearTimeout(searchDebounceTimer);
+    searchDebounceTimer = setTimeout(function() {
+      fetchTickets(1);
+    }, 350);
+  }
+
+  function changePage(direction) {
+    var target = currentPage + direction;
+    if (target >= 1 && target <= totalPages) {
+      fetchTickets(target);
+    }
+  }
+
+  function updatePaginationControls() {
+    var pagStart = totalItems === 0 ? 0 : ((currentPage - 1) * pageSize) + 1;
+    var pagEnd = Math.min(currentPage * pageSize, totalItems);
+
+    var sEl = document.getElementById('pag-start');
+    var eEl = document.getElementById('pag-end');
+    var tEl = document.getElementById('pag-total');
+    var cEl = document.getElementById('pag-current');
+
+    if (sEl) sEl.innerText = pagStart;
+    if (eEl) eEl.innerText = pagEnd;
+    if (tEl) tEl.innerText = totalItems;
+    if (cEl) cEl.innerText = currentPage + ' / ' + totalPages;
+
+    var btnPrev = document.getElementById('btn-prev-page');
+    var btnNext = document.getElementById('btn-next-page');
+    if (btnPrev) btnPrev.disabled = (currentPage <= 1);
+    if (btnNext) btnNext.disabled = (currentPage >= totalPages);
+  }
+
+  function renderTicketsTable(tickets) {
+    var tbody = document.getElementById('tickets-table-body');
+    if (tbody) {
+      if (!tickets || tickets.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="8" class="text-center py-8 text-slate-400 font-mono text-xs"><i class="fa-solid fa-inbox text-2xl mb-2 block text-slate-300"></i>Tidak ada tiket di database yang cocok dengan filter</td></tr>';
+      } else {
+        var html = '';
+        for (var i = 0; i < tickets.length; i++) {
+          var t = tickets[i];
+          var badge = getStatusBadgeHtml(t.statusTiket);
+
+          html += '<tr class="hover:bg-white/80 transition">';
+          html += '<td class="p-3 font-mono font-bold text-teal-700 whitespace-nowrap">' + escapeHtml(t.idTiket) + '</td>';
+          html += '<td class="p-3">';
+          html += '<div class="font-semibold text-slate-800">' + escapeHtml(t.bank) + '</div>';
+          html += '<div class="text-[11px] text-slate-500 font-mono">' + escapeHtml(t.serialNumber) + ' (' + escapeHtml(t.idMesin) + ')</div>';
+          html += '</td>';
+          html += '<td class="p-3 whitespace-nowrap">';
+          html += '<div class="text-slate-700 font-mono">' + escapeHtml(t.tanggalTiket) + '</div>';
+          html += '<div class="text-[10px] text-slate-400 font-mono">' + escapeHtml(t.jamTiket) + '</div>';
+          html += '</td>';
+          html += '<td class="p-3 whitespace-nowrap text-slate-600">' + escapeHtml(t.tipeTiket) + '</td>';
+          html += '<td class="p-3 whitespace-nowrap">';
+          html += '<span class="px-2.5 py-1 rounded-lg bg-slate-100 border border-slate-200 text-slate-700 font-medium">' + escapeHtml(t.namaEngineer) + '</span>';
+          html += '</td>';
+          html += '<td class="p-3 max-w-xs">';
+          html += '<div class="font-medium text-slate-800 truncate" title="' + escapeHtml(t.problem) + '">' + escapeHtml(t.problem) + '</div>';
+          if (t.note) {
+            html += '<div class="text-[10px] text-slate-500 italic truncate" title="' + escapeHtml(t.note) + '">' + escapeHtml(t.note) + '</div>';
+          }
+          html += '</td>';
+          html += '<td class="p-3 whitespace-nowrap">' + badge + '</td>';
+          html += '<td class="p-3 text-center whitespace-nowrap">';
+          html += '<button onclick="openStatusModal(\'' + escapeHtml(t.idTiket) + '\', \'' + escapeHtml(t.statusTiket) + '\')" class="px-2.5 py-1 text-[11px] rounded-lg bg-teal-50 border border-teal-200 text-teal-700 hover:bg-teal-600 hover:text-white transition flex items-center gap-1.5 mx-auto font-medium shadow-sm">';
+          html += '<i class="fa-solid fa-bolt text-[10px]"></i> Aksi Lifecycle';
+          html += '</button>';
+          html += '</td>';
+          html += '</tr>';
+        }
+        tbody.innerHTML = html;
+      }
+    }
+
+    renderDashboardRecent(tickets);
+  }
+
+  function renderDashboardRecent(tickets) {
+    var dashTbody = document.getElementById('dashboard-recent-tickets');
+    if (!dashTbody) return;
+
+    if (!tickets || tickets.length === 0) {
+      dashTbody.innerHTML = '<tr><td colspan="5" class="text-center py-6 text-slate-400 text-xs">Belum ada data tiket di Spreadsheet</td></tr>';
+      return;
+    }
+
+    var slice = tickets.slice(0, 5);
+    var html = '';
+    for (var i = 0; i < slice.length; i++) {
+      var item = slice[i];
+      html += '<tr class="hover:bg-white/60 transition">';
+      html += '<td class="p-3 font-mono font-semibold text-teal-700">' + escapeHtml(item.idTiket) + '</td>';
+      html += '<td class="p-3 font-medium text-slate-800">' + escapeHtml(item.bank) + '</td>';
+      html += '<td class="p-3 font-mono text-slate-500">' + escapeHtml(item.serialNumber) + '</td>';
+      html += '<td class="p-3 text-slate-700">' + escapeHtml(item.namaEngineer) + '</td>';
+      html += '<td class="p-3">' + getStatusBadgeHtml(item.statusTiket) + '</td>';
+      html += '</tr>';
+    }
+    dashTbody.innerHTML = html;
+  }
+
+  function getStatusBadgeHtml(status) {
+    var s = String(status || '').trim();
+    var colorClass = 'bg-slate-100 text-slate-700 border-slate-200';
+
+    if (s === 'Open' || s === 'Baru') colorClass = 'bg-amber-50 text-amber-700 border-amber-200';
+    else if (s === 'Respon') colorClass = 'bg-sky-50 text-sky-700 border-sky-200';
+    else if (s === 'Appointment') colorClass = 'bg-indigo-50 text-indigo-700 border-indigo-200';
+    else if (s === 'Handling' || s === 'Proses') colorClass = 'bg-blue-50 text-blue-700 border-blue-200';
+    else if (s === 'Solving' || s === 'Selesai') colorClass = 'bg-emerald-50 text-emerald-700 border-emerald-200';
+    else if (s === 'Take a Part') colorClass = 'bg-orange-50 text-orange-700 border-orange-200';
+    else if (s === 'Cancel' || s === 'Batal') colorClass = 'bg-rose-50 text-rose-700 border-rose-200';
+
+    return '<span class="px-2.5 py-0.5 rounded-full text-[10px] font-semibold border ' + colorClass + '">' + escapeHtml(s) + '</span>';
+  }
+
+  function openStatusModal(ticketId, currentStatus) {
+    activeActionTicketId = ticketId;
+    document.getElementById('status-modal-ticket-id').innerText = ticketId;
+    document.getElementById('select-new-status').value = currentStatus || 'Respon';
+    document.getElementById('input-status-note').value = '';
+    document.getElementById('modal-status-action').classList.remove('hidden');
+  }
+
+  function closeStatusModal() {
+    document.getElementById('modal-status-action').classList.add('hidden');
+    activeActionTicketId = null;
+  }
+
+  function confirmStatusUpdate() {
+    if (!activeActionTicketId) return;
+
+    var newStatus = document.getElementById('select-new-status').value;
+    var note = document.getElementById('input-status-note').value;
+    var ticketId = activeActionTicketId;
+
+    for (var i = 0; i < currentTicketsList.length; i++) {
+      if (currentTicketsList[i].idTiket === ticketId) {
+        currentTicketsList[i].statusTiket = newStatus;
+        if (note) currentTicketsList[i].note += ' | [' + newStatus + ']: ' + note;
+        break;
+      }
+    }
+
+    renderTicketsTable(currentTicketsList);
+    closeStatusModal();
+    showToast('Status Diperbarui', 'Tiket ' + ticketId + ' diperbarui ke: ' + newStatus, 'success');
+
+    if (typeof google !== 'undefined' && google.script && google.script.run) {
+      google.script.run
+        .withSuccessHandler(function(res) {
+          if (res && res.status !== 'success') {
+            showToast('Peringatan', res.message, 'error');
+          } else {
+            fetchTickets(currentPage);
+            loadDashboardMetrics();
+          }
+        })
+        .withFailureHandler(function(err) {
+          showToast('Error', 'Gagal update status di backend: ' + err, 'error');
+        })
+        .updateTicketStatus(ticketId, newStatus, note);
+    }
+  }
+
+  function loadDashboardMetrics() {
+    if (typeof google !== 'undefined' && google.script && google.script.run) {
+      google.script.run
+        .withSuccessHandler(function(res) {
+          if (res && res.status === 'success') {
+            var d = res.data;
+            document.getElementById('stat-total').innerText = d.totalTickets;
+            document.getElementById('stat-open').innerText = d.openTickets;
+            document.getElementById('stat-handling').innerText = d.handlingTickets;
+            document.getElementById('stat-solved').innerText = d.solvingTickets;
+
+            updateDistributionBars(d.totalTickets, d.solvingTickets, d.handlingTickets, d.openTickets);
+          }
+        })
+        .getSectionData('DashboardMetrics');
+    }
+  }
+
+  function updateDashboardCountsOptimistic(addTotal, addOpen, addHandling, addSolved) {
+    var tEl = document.getElementById('stat-total');
+    var oEl = document.getElementById('stat-open');
+    if (tEl) tEl.innerText = (parseInt(tEl.innerText, 10) || 0) + addTotal;
+    if (oEl) oEl.innerText = (parseInt(oEl.innerText, 10) || 0) + addOpen;
+  }
+
+  function updateDistributionBars(total, solved, handling, open) {
+    if (total <= 0) total = 1;
+    var pSolved = Math.round((solved / total) * 100);
+    var pHandling = Math.round((handling / total) * 100);
+    var pOpen = Math.round((open / total) * 100);
+
+    var distS = document.getElementById('dist-solving');
+    var barS = document.getElementById('dist-bar-solving');
+    var distH = document.getElementById('dist-handling');
+    var barH = document.getElementById('dist-bar-handling');
+    var distO = document.getElementById('dist-open');
+    var barO = document.getElementById('dist-bar-open');
+
+    if (distS) distS.innerText = pSolved + '%';
+    if (barS) barS.style.width = pSolved + '%';
+    if (distH) distH.innerText = pHandling + '%';
+    if (barH) barH.style.width = pHandling + '%';
+    if (distO) distO.innerText = pOpen + '%';
+    if (barO) barO.style.width = pOpen + '%';
+  }
+
+  function loadSectionAuxiliaryData(section) {
+    if (typeof google !== 'undefined' && google.script && google.script.run) {
+      google.script.run
+        .withSuccessHandler(function(res) {
+          if (res && res.status === 'success') {
+            if (section === 'FSE') {
+              currentFSEList = res.data || [];
+              renderFSECards(currentFSEList);
+            }
+            if (section === 'DataPM') {
+              currentPMList = res.data || [];
+              renderPMTable(currentPMList);
+            }
+            if (section === 'DatabaseMesin') renderMachinesTable(res.data);
+            if (section === 'DatabaseCustomer') renderCustomersTable(res.data);
+            if (section === 'ReportingFSE') renderReportingCards(res.data);
+          }
+        })
+        .withFailureHandler(function(err) {
+          console.error('Error loadSectionAuxiliaryData (' + section + '):', err);
+        })
+        .getSectionData(section);
+    } else {
+      if (section === 'DataPM') {
+        currentPMList = [
+          { idPM: 'PM-2601', idMesin: 'ATM-BCA-01', serialNumber: 'SN-BCA-99201', bank: 'Bank Central Asia (BCA)', lokasi: 'KCP Grand Indonesia Lt. 1', periode: 'Q3-2026', tanggalRencana: '2026-09-15', tanggalRealisasi: '-', engineer: 'Rizky Hardiansyah', status: 'Scheduled', catatan: 'Pembersihan modul presenter & sensor' },
+          { idPM: 'PM-2602', idMesin: 'ATM-MDR-01', serialNumber: 'SN-MDR-44011', bank: 'Bank Mandiri', lokasi: 'Plaza Senayan Ground Floor', periode: 'Q3-2026', tanggalRencana: '2026-09-10', tanggalRealisasi: '2026-09-10', engineer: 'Fajar Ramadhan', status: 'Completed', catatan: 'Pelumasan gear pick-up module & check firmware' },
+          { idPM: 'PM-2603', idMesin: 'ATM-BRI-01', serialNumber: 'SN-BRI-11055', bank: 'Bank Rakyat Indonesia (BRI)', lokasi: 'Pasar Tanah Abang Blok A', periode: 'Q3-2026', tanggalRencana: '2026-09-12', tanggalRealisasi: '-', engineer: 'Dimas Kurniawan', status: 'In Progress', catatan: 'Pengecekan UPS & power supply' }
+        ];
+        renderPMTable(currentPMList);
+      }
+    }
+  }
+
+  function renderPMTable(list) {
+    var tbody = document.getElementById('pm-table-body');
+    if (!tbody) return;
+
+    if (!list || list.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="9" class="text-center py-8 text-slate-400 font-mono text-xs"><i class="fa-solid fa-calendar-xmark text-2xl mb-2 block text-slate-300"></i>Tidak ada data Preventive Maintenance ditemukan.</td></tr>';
+      return;
+    }
+
+    var html = '';
+    for (var i = 0; i < list.length; i++) {
+      var item = list[i];
+      var st = String(item.status || 'Scheduled').trim();
+      var badgeClass = 'bg-slate-100 text-slate-700 border-slate-200';
+
+      if (st.toLowerCase() === 'scheduled') badgeClass = 'bg-sky-50 text-sky-700 border-sky-200';
+      else if (st.toLowerCase() === 'in progress') badgeClass = 'bg-amber-50 text-amber-700 border-amber-200';
+      else if (st.toLowerCase() === 'completed') badgeClass = 'bg-emerald-50 text-emerald-700 border-emerald-200';
+      else if (st.toLowerCase() === 'overdue') badgeClass = 'bg-rose-50 text-rose-700 border-rose-200';
+
+      html += '<tr class="hover:bg-white/80 transition">';
+      html += '<td class="p-3 font-mono font-bold text-teal-700 whitespace-nowrap">' + escapeHtml(item.idPM) + '</td>';
+      html += '<td class="p-3">';
+      html += '<div class="font-semibold text-slate-800">' + escapeHtml(item.bank) + '</div>';
+      html += '<div class="text-[11px] text-slate-500 font-mono">' + escapeHtml(item.serialNumber) + ' (' + escapeHtml(item.idMesin) + ')</div>';
+      html += '</td>';
+      html += '<td class="p-3 text-slate-600 max-w-xs truncate" title="' + escapeHtml(item.lokasi) + '">' + escapeHtml(item.lokasi) + '</td>';
+      html += '<td class="p-3 whitespace-nowrap font-mono text-slate-700">' + escapeHtml(item.periode) + '</td>';
+      html += '<td class="p-3 whitespace-nowrap font-mono text-slate-600">' + escapeHtml(item.tanggalRencana) + '</td>';
+      html += '<td class="p-3 whitespace-nowrap font-mono text-slate-800 font-semibold">' + escapeHtml(item.tanggalRealisasi) + '</td>';
+      html += '<td class="p-3 whitespace-nowrap"><span class="px-2 py-0.5 rounded-lg bg-slate-100 border border-slate-200 text-slate-700">' + escapeHtml(item.engineer) + '</span></td>';
+      html += '<td class="p-3 whitespace-nowrap"><span class="px-2.5 py-0.5 rounded-full text-[10px] font-semibold border ' + badgeClass + '">' + escapeHtml(st) + '</span></td>';
+      html += '<td class="p-3 max-w-xs text-[11px] text-slate-500 truncate" title="' + escapeHtml(item.catatan) + '">' + escapeHtml(item.catatan || '-') + '</td>';
+      html += '</tr>';
+    }
+
+    tbody.innerHTML = html;
+  }
+
+  function filterPMTableClientSide() {
+    var searchEl = document.getElementById('filter-pm-search');
+    var statusEl = document.getElementById('filter-pm-status');
+
+    var s = searchEl ? searchEl.value.toLowerCase().trim() : '';
+    var st = statusEl ? statusEl.value.trim() : 'ALL';
+
+    var filtered = currentPMList.filter(function(item) {
+      if (st !== 'ALL' && item.status.toLowerCase() !== st.toLowerCase()) return false;
+      if (s !== '') {
+        var match = (
+          item.idPM.toLowerCase().indexOf(s) !== -1 ||
+          item.bank.toLowerCase().indexOf(s) !== -1 ||
+          item.serialNumber.toLowerCase().indexOf(s) !== -1 ||
+          item.idMesin.toLowerCase().indexOf(s) !== -1 ||
+          item.lokasi.toLowerCase().indexOf(s) !== -1 ||
+          item.engineer.toLowerCase().indexOf(s) !== -1
+        );
+        if (!match) return false;
+      }
+      return true;
+    });
+
+    renderPMTable(filtered);
+  }
+
+  function renderFSECards(list) {
+    var container = document.getElementById('fse-grid-container');
+    if (!container) return;
+
+    if (!list || list.length === 0) {
+      container.innerHTML = '<div class="col-span-3 text-center py-8 text-slate-400 text-xs">Belum ada data FSE terdaftar di sheet Engineers.</div>';
+      return;
+    }
+
+    var html = '';
+    for (var i = 0; i < list.length; i++) {
+      var eng = list[i];
+      html += '<div class="soft-card-panel p-4 relative">';
+      html += '<div class="flex items-center justify-between mb-3">';
+      html += '<div class="w-9 h-9 rounded-xl bg-teal-50 text-teal-700 flex items-center justify-center font-bold text-xs"><i class="fa-solid fa-wrench"></i></div>';
+      html += '<span class="px-2 py-0.5 rounded-full text-[10px] bg-emerald-50 border border-emerald-200 text-emerald-700 font-semibold">' + escapeHtml(eng.status || 'Aktif') + '</span>';
+      html += '</div>';
+      html += '<h4 class="font-bold text-sm text-slate-800">' + escapeHtml(eng.nama) + '</h4>';
+      html += '<p class="text-xs text-teal-700 font-mono mt-0.5">' + escapeHtml(eng.id) + '</p>';
+      html += '<div class="mt-3 pt-3 border-t border-slate-100 text-xs space-y-1 text-slate-600">';
+      html += '<div><i class="fa-solid fa-location-dot text-slate-400 w-4"></i> ' + escapeHtml(eng.wilayah) + '</div>';
+      html += '<div><i class="fa-solid fa-phone text-slate-400 w-4"></i> <span class="font-mono text-slate-700">' + escapeHtml(eng.noHp) + '</span></div>';
+      html += '</div>';
+      html += '</div>';
+    }
+    container.innerHTML = html;
+  }
+
+  function renderMachinesTable(list) {
+    var tbody = document.getElementById('machines-table-body');
+    if (!tbody) return;
+
+    if (!list || list.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="6" class="text-center py-6 text-slate-400 text-xs">Belum ada data mesin terdaftar di sheet Machines.</td></tr>';
+      return;
+    }
+
+    var html = '';
+    for (var i = 0; i < list.length; i++) {
+      var m = list[i];
+      html += '<tr class="hover:bg-white/80 transition">';
+      html += '<td class="p-3 font-mono font-bold text-teal-700">' + escapeHtml(m.idMesin) + '</td>';
+      html += '<td class="p-3 font-mono text-slate-800 font-medium">' + escapeHtml(m.serialNumber) + '</td>';
+      html += '<td class="p-3 text-slate-700">' + escapeHtml(m.bank) + '</td>';
+      html += '<td class="p-3 text-slate-600">' + escapeHtml(m.lokasi) + '</td>';
+      html += '<td class="p-3 text-slate-500">' + escapeHtml(m.tipe) + '</td>';
+      html += '<td class="p-3"><span class="px-2.5 py-0.5 rounded-full text-[10px] bg-emerald-50 border border-emerald-200 text-emerald-700 font-semibold">' + escapeHtml(m.status) + '</span></td>';
+      html += '</tr>';
+    }
+    tbody.innerHTML = html;
+  }
+
+  function renderCustomersTable(list) {
+    var tbody = document.getElementById('customers-table-body');
+    if (!tbody) return;
+
+    if (!list || list.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="6" class="text-center py-6 text-slate-400 text-xs">Belum ada data nasabah bank di sheet Customers.</td></tr>';
+      return;
+    }
+
+    var html = '';
+    for (var i = 0; i < list.length; i++) {
+      var c = list[i];
+      html += '<tr class="hover:bg-white/80 transition">';
+      html += '<td class="p-3 font-mono text-amber-700 font-semibold">' + escapeHtml(c.idCustomer) + '</td>';
+      html += '<td class="p-3 font-bold text-slate-800">' + escapeHtml(c.namaBank) + '</td>';
+      html += '<td class="p-3 text-slate-700">' + escapeHtml(c.kontakPic) + '</td>';
+      html += '<td class="p-3 font-mono text-teal-700">' + escapeHtml(c.teleponPic) + '</td>';
+      html += '<td class="p-3 text-slate-500 font-mono text-[11px]">' + escapeHtml(c.emailBank) + '</td>';
+      html += '<td class="p-3 text-slate-600">' + escapeHtml(c.alamat) + '</td>';
+      html += '</tr>';
+    }
+    tbody.innerHTML = html;
+  }
+
+  function renderReportingCards(list) {
+    var container = document.getElementById('reporting-cards-container');
+    if (!container) return;
+
+    var reports = list || [];
+    if (reports.length === 0 && cachedDropdowns.engineers) {
+      reports = cachedDropdowns.engineers;
+    }
+
+    if (reports.length === 0) {
+      container.innerHTML = '<div class="col-span-3 text-center py-8 text-slate-400 text-xs">Belum ada data laporan FSE.</div>';
+      return;
+    }
+
+    var html = '';
+    for (var i = 0; i < reports.length; i++) {
+      var eng = reports[i];
+      html += '<div class="soft-card-panel p-4">';
+      html += '<div class="flex justify-between items-center mb-3">';
+      html += '<span class="font-bold text-sm text-slate-800">' + escapeHtml(eng.nama) + '</span>';
+      html += '<span class="text-xs text-teal-700 font-mono font-semibold">' + escapeHtml(eng.completionRate || '100%') + ' Rate</span>';
+      html += '</div>';
+      html += '<div class="space-y-2 text-xs text-slate-600">';
+      html += '<div class="flex justify-between"><span>Tiket Ditugaskan:</span><span class="font-bold text-slate-800">' + (eng.totalAssigned || 0) + ' Tiket</span></div>';
+      html += '<div class="flex justify-between"><span>Tiket Selesai (Solving):</span><span class="font-bold text-emerald-600">' + (eng.totalSolving || 0) + ' Tiket</span></div>';
+      html += '<div class="flex justify-between"><span>Rata-rata Resolusi:</span><span class="font-mono text-slate-800 font-medium">' + escapeHtml(eng.avgResolutionTime || '2.4 Jam') + '</span></div>';
+      html += '<div class="flex justify-between"><span>Area Tugas:</span><span class="text-slate-500">' + escapeHtml(eng.wilayah || 'DKI Jakarta') + '</span></div>';
+      html += '</div>';
+      html += '</div>';
+    }
+    container.innerHTML = html;
+  }
+
+  function renderKPIScorecards() {
+    var container = document.getElementById('kpi-scorecard-container');
+    if (!container) return;
+
+    var kpis = [
+      { title: 'Ticket Dispatch Speed (Role Monitoring)', target: '< 15 Menit', actual: '8.4 Menit', score: '98.8%' },
+      { title: 'FSE MTTR (Mean Time to Repair)', target: '< 4.0 Jam', actual: '2.6 Jam', score: '96.5%' },
+      { title: 'ATM First Visit Resolution Rate', target: '> 90.0%', actual: '94.2%', score: '104.6%' },
+      { title: 'Data Cleanliness & Timestamp Accuracy', target: '100%', actual: '99.9%', score: '99.9%' }
+    ];
+
+    var html = '';
+    for (var i = 0; i < kpis.length; i++) {
+      var k = kpis[i];
+      html += '<div class="soft-card-panel p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">';
+      html += '<div>';
+      html += '<h4 class="font-semibold text-sm text-slate-800">' + escapeHtml(k.title) + '</h4>';
+      html += '<p class="text-slate-500 text-xs mt-0.5">Target: ' + escapeHtml(k.target) + ' | Aktual: <span class="text-slate-800 font-mono font-semibold">' + escapeHtml(k.actual) + '</span></p>';
+      html += '</div>';
+      html += '<div class="text-right">';
+      html += '<span class="text-xl font-bold font-mono text-teal-700">' + escapeHtml(k.score) + '</span>';
+      html += '<p class="text-[10px] text-emerald-600 font-medium">Achieved</p>';
+      html += '</div>';
+      html += '</div>';
+    }
+    container.innerHTML = html;
+  }
+
+  function showToast(title, message, type) {
+    var toast = document.getElementById('toast-notification');
+    var icon = document.getElementById('toast-icon');
+    var tTitle = document.getElementById('toast-title');
+    var tMsg = document.getElementById('toast-message');
+
+    if (!toast) return;
+
+    tTitle.innerText = title;
+    tMsg.innerText = message;
+
+    if (type === 'error') {
+      icon.innerHTML = '<i class="fa-solid fa-circle-exclamation text-rose-500"></i>';
+      toast.style.borderColor = 'rgba(244, 63, 94, 0.4)';
+    } else {
+      icon.innerHTML = '<i class="fa-solid fa-circle-check text-teal-600"></i>';
+      toast.style.borderColor = 'rgba(20, 184, 166, 0.4)';
+    }
+
+    toast.classList.remove('translate-y-20', 'opacity-0', 'pointer-events-none');
+
+    setTimeout(function() {
+      toast.classList.add('translate-y-20', 'opacity-0', 'pointer-events-none');
+    }, 4000);
+  }
+
+  function exportReportNotice() {
+    showToast('Export Dimulai', 'Mempersiapkan data laporan FSE format CSV/Spreadsheet...', 'success');
+  }
+
+  function escapeHtml(string) {
+    if (!string) return '';
+    return String(string)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
+  }
+</script>

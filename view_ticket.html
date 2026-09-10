@@ -1,0 +1,85 @@
+<!-- SECTION: TICKET (MANAJEMEN TIKET & DATA PAGINATION) -->
+<section id="sec-Ticket" class="view-section space-y-4 hidden">
+  <div class="soft-card-panel p-5">
+    
+    <!-- Top Action & Filter Toolbar -->
+    <div class="flex flex-col sm:flex-row items-center justify-between gap-4 mb-5">
+      <div class="flex flex-wrap items-center gap-3 w-full sm:w-auto">
+        <!-- Search Input -->
+        <div class="relative flex-1 sm:w-64">
+          <i class="fa-solid fa-magnifying-glass absolute left-3 top-2.5 text-slate-400 text-xs"></i>
+          <input type="text" id="filter-search" oninput="debounceSearch()" placeholder="Cari Tiket / SN / Problem..." 
+            class="soft-input w-full pl-9 pr-3 py-2 text-xs rounded-xl">
+        </div>
+
+        <!-- Status Filter Dropdown -->
+        <select id="filter-status" onchange="fetchTickets(1)" class="soft-input px-3 py-2 text-xs rounded-xl">
+          <option value="ALL">Semua Status</option>
+          <option value="Open">Open</option>
+          <option value="Respon">Respon</option>
+          <option value="Appointment">Appointment</option>
+          <option value="Handling">Handling</option>
+          <option value="Solving">Solving</option>
+          <option value="Take a Part">Take a Part</option>
+          <option value="Cancel">Cancel</option>
+        </select>
+
+        <!-- Bank Filter Dropdown -->
+        <select id="filter-bank" onchange="fetchTickets(1)" class="soft-input px-3 py-2 text-xs rounded-xl">
+          <option value="ALL">Semua Bank</option>
+        </select>
+      </div>
+
+      <!-- Button Buat Tiket -->
+      <button onclick="openCreateTicketModal()" class="w-full sm:w-auto soft-btn-primary text-xs font-semibold px-4 py-2.5 rounded-xl flex items-center justify-center gap-2 shadow-sm">
+        <i class="fa-solid fa-plus-circle"></i>
+        <span>Buat Tiket Baru</span>
+      </button>
+    </div>
+
+    <!-- Data Table Container -->
+    <div class="overflow-x-auto rounded-xl border border-slate-200 bg-white/60">
+      <table class="w-full text-left text-xs text-slate-600">
+        <thead class="text-[10px] uppercase bg-slate-100/80 text-slate-700 border-b border-slate-200">
+          <tr>
+            <th class="p-3 font-semibold">ID Tiket</th>
+            <th class="p-3 font-semibold">Bank & Mesin</th>
+            <th class="p-3 font-semibold">Waktu Buat</th>
+            <th class="p-3 font-semibold">Tipe</th>
+            <th class="p-3 font-semibold">Engineer (FSE)</th>
+            <th class="p-3 font-semibold">Problem & Note</th>
+            <th class="p-3 font-semibold">Status</th>
+            <th class="p-3 font-semibold text-center">Aksi Lifecycle</th>
+          </tr>
+        </thead>
+        <tbody id="tickets-table-body" class="divide-y divide-slate-100">
+          <!-- Diisi secara dinamis melalui javascript.html -->
+          <tr>
+            <td colspan="8" class="text-center py-8 text-slate-400 font-mono text-xs">
+              <i class="fa-solid fa-spinner fa-spin text-teal-600 mr-2"></i>Memuat antrean tiket dari database...
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Pagination Footer Controls -->
+    <div class="flex flex-col sm:flex-row items-center justify-between gap-3 mt-4 text-xs text-slate-500">
+      <div>
+        Menampilkan <span id="pag-start" class="text-slate-800 font-semibold">0</span> - 
+        <span id="pag-end" class="text-slate-800 font-semibold">0</span> dari 
+        <span id="pag-total" class="text-teal-700 font-semibold">0</span> tiket
+      </div>
+      <div class="flex items-center gap-2">
+        <button id="btn-prev-page" onclick="changePage(-1)" class="px-3 py-1.5 rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 disabled:opacity-40 disabled:pointer-events-none transition shadow-sm font-medium">
+          <i class="fa-solid fa-chevron-left mr-1"></i> Prev
+        </button>
+        <span class="px-3 py-1 bg-white border border-slate-200 rounded-lg text-slate-700 font-mono font-medium shadow-sm" id="pag-current">1 / 1</span>
+        <button id="btn-next-page" onclick="changePage(1)" class="px-3 py-1.5 rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 disabled:opacity-40 disabled:pointer-events-none transition shadow-sm font-medium">
+          Next <i class="fa-solid fa-chevron-right ml-1"></i>
+        </button>
+      </div>
+    </div>
+
+  </div>
+</section>

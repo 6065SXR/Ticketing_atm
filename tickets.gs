@@ -1,7 +1,8 @@
 /**
  * Hardiansyah Fam - ATM Problem Ticketing System
  * File: tickets.gs
- * Fungsi: Logika Manajemen Tiket (Auto-Increment ID Harian, CRUD, Server Pagination, dan Lifecycle Action).
+ * Fungsi: Logika Tiket Harian, Server Pagination, Strict FSE Action Engine,
+ *         Penutupan Tiket (Closed) oleh Monitoring, dan Verifikasi Dokumen Fisik oleh Admin.
  */
 
 function generateNewTicketNumber() {
@@ -70,7 +71,8 @@ function createTicket(payload) {
       ticketSheet.appendRow([
         'ID_Tiket', 'Bank', 'Serial_Number', 'ID_Mesin', 
         'Tanggal_Tiket', 'Jam_Tiket', 'Tipe_Tiket', 'Nama_Engineer', 
-        'Problem', 'Note', 'Status_Tiket', 'Updated_At'
+        'Problem', 'Note', 'Status_Tiket', 'Updated_At',
+        'Closed_At', 'Hardcopy_Status', 'Hardcopy_Received_At', 'Hardcopy_Received_By'
       ]);
     }
 
@@ -92,7 +94,8 @@ function createTicket(payload) {
     var newRow = [
       idTiket, bank, serialNumber, idMesin,
       tanggalTiket, jamTiket, tipeTiket, namaEngineer,
-      problem, note, statusTiket, updatedAt
+      problem, note, statusTiket, updatedAt,
+      '', 'Belum Dikirim', '', ''
     ];
 
     ticketSheet.appendRow(newRow);
@@ -113,7 +116,9 @@ function createTicket(payload) {
         problem: problem,
         note: note,
         statusTiket: statusTiket,
-        updatedAt: updatedAt
+        updatedAt: updatedAt,
+        closedAt: '',
+        hardcopyStatus: 'Belum Dikirim'
       }
     };
   } catch (err) {
@@ -126,20 +131,7 @@ function getTicketsPaginated(page, pageSize, searchQuery, statusFilter, bankFilt
     var ss = getSpreadsheet();
     var sheet = findTicketsSheet(ss);
     
-    if (!sheet) {
-      return {
-        status: 'error',
-        message: 'Sheet Tiket tidak ditemukan di Spreadsheet.',
-        tickets: [],
-        page: 1,
-        pageSize: pageSize || 10,
-        totalItems: 0,
-        totalPages: 0
-      };
-    }
-
-    var lastRow = sheet.getLastRow();
-    if (lastRow <= 1) {
+    if (!sheet || sheet.getLastRow() <= 1) {
       return {
         status: 'success',
         tickets: [],
@@ -150,10 +142,10 @@ function getTicketsPaginated(page, pageSize, searchQuery, statusFilter, bankFilt
       };
     }
 
-    var lastCol = Math.max(sheet.getLastColumn(), 1);
+    var lastRow = sheet.getLastRow();
+    var lastCol = Math.max(sheet.getLastColumn(), 16);
     var allData = sheet.getRange(1, 1, lastRow, lastCol).getDisplayValues();
     
-    // Deteksi baris header (Baris 1 atau Baris 2)
     var headerRowIdx = 0;
     var headers = allData[0];
     var isHeader0 = false;
@@ -165,86 +157,36 @@ function getTicketsPaginated(page, pageSize, searchQuery, statusFilter, bankFilt
       }
     }
     if (!isHeader0 && allData.length > 2) {
-      for (var h1 = 0; h1 < allData[1].length; h1++) {
-        var strH1 = String(allData[1][h1] || '').toLowerCase();
-        if (strH1.indexOf('tiket') !== -1 || strH1.indexOf('bank') !== -1 || strH1.indexOf('id') !== -1 || strH1.indexOf('problem') !== -1) {
-          headerRowIdx = 1;
-          headers = allData[1];
-          break;
-        }
-      }
+      headerRowIdx = 1;
+      headers = allData[1];
     }
 
-    // Pemetaan indeks kolom fleksibel (mendukung berbagai format bahasa)
     var colMap = {
-      idTiket: -1,
-      bank: -1,
-      serialNumber: -1,
-      idMesin: -1,
-      tanggalTiket: -1,
-      jamTiket: -1,
-      tipeTiket: -1,
-      namaEngineer: -1,
-      problem: -1,
-      note: -1,
-      statusTiket: -1,
-      updatedAt: -1
+      idTiket: 0, bank: 1, serialNumber: 2, idMesin: 3,
+      tanggalTiket: 4, jamTiket: 5, tipeTiket: 6, namaEngineer: 7,
+      problem: 8, note: 9, statusTiket: 10, updatedAt: 11,
+      closedAt: 12, hardcopyStatus: 13, hardcopyReceivedAt: 14, hardcopyReceivedBy: 15
     };
 
     for (var c = 0; c < headers.length; c++) {
       var h = String(headers[c] || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-      if (h === 'idtiket' || h === 'notiket' || h === 'nomortiket' || h === 'ticketid' || h === 'id' || h === 'no' || h === 'ticketno') {
-        if (colMap.idTiket === -1) colMap.idTiket = c;
-      }
-      else if (h === 'bank' || h === 'namabank' || h === 'customer' || h === 'namacustomer' || h === 'mitra') {
-        if (colMap.bank === -1) colMap.bank = c;
-      }
-      else if (h === 'serialnumber' || h === 'sn' || h === 'noserial' || h === 'noseri' || h === 'serialno' || h === 'seri') {
-        if (colMap.serialNumber === -1) colMap.serialNumber = c;
-      }
-      else if (h === 'idmesin' || h === 'machineid' || h === 'mesin' || h === 'atmid' || h === 'idatm' || h === 'tid' || h === 'nomesin') {
-        if (colMap.idMesin === -1) colMap.idMesin = c;
-      }
-      else if (h === 'tanggaltiket' || h === 'tanggal' || h === 'date' || h === 'tgl' || h === 'tgltiket' || h === 'tglbuat') {
-        if (colMap.tanggalTiket === -1) colMap.tanggalTiket = c;
-      }
-      else if (h === 'jamtiket' || h === 'jam' || h === 'time' || h === 'waktu' || h === 'jambuat') {
-        if (colMap.jamTiket === -1) colMap.jamTiket = c;
-      }
-      else if (h === 'tipetiket' || h === 'tipe' || h === 'type' || h === 'jenistiket' || h === 'jenis' || h === 'kategori') {
-        if (colMap.tipeTiket === -1) colMap.tipeTiket = c;
-      }
-      else if (h === 'namaengineer' || h === 'engineer' || h === 'fse' || h === 'teknisi' || h === 'namafse' || h === 'namateknisi' || h === 'petugas' || h === 'pic') {
-        if (colMap.namaEngineer === -1) colMap.namaEngineer = c;
-      }
-      else if (h === 'problem' || h === 'masalah' || h === 'keluhan' || h === 'kendala' || h === 'kerusakan' || h === 'deskripsi' || h === 'issue' || h === 'keteranganproblem') {
-        if (colMap.problem === -1) colMap.problem = c;
-      }
-      else if (h === 'note' || h === 'catatan' || h === 'keterangan' || h === 'notes' || h === 'remark' || h === 'remarks') {
-        if (colMap.note === -1) colMap.note = c;
-      }
-      else if (h === 'statustiket' || h === 'status' || h === 'statusticket' || h === 'kondisi' || h === 'state') {
-        if (colMap.statusTiket === -1) colMap.statusTiket = c;
-      }
-      else if (h === 'updatedat' || h === 'update' || h === 'waktuupdate' || h === 'lastupdate' || h === 'tglupdate' || h === 'modified') {
-        if (colMap.updatedAt === -1) colMap.updatedAt = c;
-      }
+      if (h === 'idtiket' || h === 'notiket' || h === 'ticketid' || h === 'id') colMap.idTiket = c;
+      else if (h === 'bank' || h === 'namabank' || h === 'customer') colMap.bank = c;
+      else if (h === 'serialnumber' || h === 'sn' || h === 'noserial') colMap.serialNumber = c;
+      else if (h === 'idmesin' || h === 'atmid' || h === 'machineid') colMap.idMesin = c;
+      else if (h === 'tanggaltiket' || h === 'tanggal' || h === 'date') colMap.tanggalTiket = c;
+      else if (h === 'jamtiket' || h === 'jam' || h === 'time') colMap.jamTiket = c;
+      else if (h === 'tipetiket' || h === 'tipe' || h === 'type') colMap.tipeTiket = c;
+      else if (h === 'namaengineer' || h === 'engineer' || h === 'fse' || h === 'teknisi') colMap.namaEngineer = c;
+      else if (h === 'problem' || h === 'masalah' || h === 'kendala') colMap.problem = c;
+      else if (h === 'note' || h === 'catatan' || h === 'notes') colMap.note = c;
+      else if (h === 'statustiket' || h === 'status' || h === 'kondisi') colMap.statusTiket = c;
+      else if (h === 'updatedat' || h === 'update' || h === 'waktuupdate') colMap.updatedAt = c;
+      else if (h === 'closedat' || h === 'tglclosed' || h === 'waktuclosed') colMap.closedAt = c;
+      else if (h === 'hardcopystatus' || h === 'statushardcopy' || h === 'dokumenfisik') colMap.hardcopyStatus = c;
+      else if (h === 'hardcopyreceivedat' || h === 'tglditerima' || h === 'waktuterima') colMap.hardcopyReceivedAt = c;
+      else if (h === 'hardcopyreceivedby' || h === 'penerima' || h === 'adminpenerima') colMap.hardcopyReceivedBy = c;
     }
-
-    // Fallback otomatis jika header berbeda
-    var maxIdx = Math.max(headers.length - 1, 0);
-    if (colMap.idTiket === -1) colMap.idTiket = 0;
-    if (colMap.bank === -1) colMap.bank = Math.min(1, maxIdx);
-    if (colMap.serialNumber === -1) colMap.serialNumber = Math.min(2, maxIdx);
-    if (colMap.idMesin === -1) colMap.idMesin = Math.min(3, maxIdx);
-    if (colMap.tanggalTiket === -1) colMap.tanggalTiket = Math.min(4, maxIdx);
-    if (colMap.jamTiket === -1) colMap.jamTiket = Math.min(5, maxIdx);
-    if (colMap.tipeTiket === -1) colMap.tipeTiket = Math.min(6, maxIdx);
-    if (colMap.namaEngineer === -1) colMap.namaEngineer = Math.min(7, maxIdx);
-    if (colMap.problem === -1) colMap.problem = Math.min(8, maxIdx);
-    if (colMap.note === -1) colMap.note = Math.min(9, maxIdx);
-    if (colMap.statusTiket === -1) colMap.statusTiket = Math.min(10, maxIdx);
-    if (colMap.updatedAt === -1) colMap.updatedAt = Math.min(11, maxIdx);
 
     var rawData = allData.slice(headerRowIdx + 1);
     var filtered = [];
@@ -254,32 +196,27 @@ function getTicketsPaginated(page, pageSize, searchQuery, statusFilter, bankFilt
 
     for (var i = 0; i < rawData.length; i++) {
       var row = rawData[i];
-      
-      var hasData = false;
-      for (var k = 0; k < row.length; k++) {
-        if (String(row[k] || '').trim() !== '') {
-          hasData = true;
-          break;
-        }
-      }
-      if (!hasData) continue;
+      if (!row.some(function(k) { return String(k).trim() !== ''; })) continue;
 
-      var idVal = colMap.idTiket >= 0 ? String(row[colMap.idTiket] || '').trim() : '';
-      if (!idVal) idVal = 'TK-' + (i + 1);
+      var idVal = String(row[colMap.idTiket] || ('TK-' + (i + 1))).trim();
 
       var item = {
         idTiket: idVal,
-        bank: colMap.bank >= 0 ? String(row[colMap.bank] || '-').trim() : '-',
-        serialNumber: colMap.serialNumber >= 0 ? String(row[colMap.serialNumber] || '-').trim() : '-',
-        idMesin: colMap.idMesin >= 0 ? String(row[colMap.idMesin] || '-').trim() : '-',
-        tanggalTiket: colMap.tanggalTiket >= 0 ? String(row[colMap.tanggalTiket] || '-').trim() : '-',
-        jamTiket: colMap.jamTiket >= 0 ? String(row[colMap.jamTiket] || '-').trim() : '-',
-        tipeTiket: colMap.tipeTiket >= 0 ? String(row[colMap.tipeTiket] || 'CM').trim() : 'CM',
-        namaEngineer: colMap.namaEngineer >= 0 ? String(row[colMap.namaEngineer] || '-').trim() : '-',
-        problem: colMap.problem >= 0 ? String(row[colMap.problem] || '-').trim() : '-',
-        note: colMap.note >= 0 ? String(row[colMap.note] || '').trim() : '',
-        statusTiket: colMap.statusTiket >= 0 ? String(row[colMap.statusTiket] || 'Open').trim() : 'Open',
-        updatedAt: colMap.updatedAt >= 0 ? String(row[colMap.updatedAt] || '-').trim() : '-'
+        bank: String(row[colMap.bank] || '-').trim(),
+        serialNumber: String(row[colMap.serialNumber] || '-').trim(),
+        idMesin: String(row[colMap.idMesin] || '-').trim(),
+        tanggalTiket: String(row[colMap.tanggalTiket] || '-').trim(),
+        jamTiket: String(row[colMap.jamTiket] || '-').trim(),
+        tipeTiket: String(row[colMap.tipeTiket] || 'CM').trim(),
+        namaEngineer: String(row[colMap.namaEngineer] || '-').trim(),
+        problem: String(row[colMap.problem] || '-').trim(),
+        note: String(row[colMap.note] || '').trim(),
+        statusTiket: String(row[colMap.statusTiket] || 'Open').trim(),
+        updatedAt: String(row[colMap.updatedAt] || '-').trim(),
+        closedAt: String(row[colMap.closedAt] || '').trim(),
+        hardcopyStatus: String(row[colMap.hardcopyStatus] || 'Belum Dikirim').trim(),
+        hardcopyReceivedAt: String(row[colMap.hardcopyReceivedAt] || '').trim(),
+        hardcopyReceivedBy: String(row[colMap.hardcopyReceivedBy] || '').trim()
       };
 
       if (!item.statusTiket) item.statusTiket = 'Open';
@@ -309,7 +246,7 @@ function getTicketsPaginated(page, pageSize, searchQuery, statusFilter, bankFilt
       filtered.push(item);
     }
 
-    filtered.reverse(); // Tiket terbaru di posisi paling atas
+    filtered.reverse();
 
     var totalItems = filtered.length;
     var validPageSize = Math.max(1, parseInt(pageSize, 10) || 10);
@@ -333,7 +270,7 @@ function getTicketsPaginated(page, pageSize, searchQuery, statusFilter, bankFilt
   }
 }
 
-function updateTicketStatus(ticketId, newStatus, additionalNote) {
+function updateTicketStatus(ticketId, newStatus, additionalNote, userContext) {
   try {
     var ss = getSpreadsheet();
     var sheet = findTicketsSheet(ss);
@@ -342,27 +279,28 @@ function updateTicketStatus(ticketId, newStatus, additionalNote) {
     var lastRow = sheet.getLastRow();
     if (lastRow <= 1) return { status: 'error', message: 'Tidak ada data tiket' };
 
-    var lastCol = Math.max(sheet.getLastColumn(), 1);
+    var lastCol = Math.max(sheet.getLastColumn(), 16);
     var allData = sheet.getRange(1, 1, lastRow, lastCol).getDisplayValues();
     var headers = allData[0];
 
-    var idCol = 0;
-    var statusCol = 10;
-    var noteCol = 9;
-    var updateCol = 11;
+    var idCol = 0, statusCol = 10, noteCol = 9, updateCol = 11, closedCol = 12;
 
     for (var c = 0; c < headers.length; c++) {
       var h = String(headers[c] || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-      if (h === 'idtiket' || h === 'notiket' || h === 'nomortiket' || h === 'ticketid' || h === 'id') idCol = c;
-      else if (h === 'statustiket' || h === 'status' || h === 'statusticket' || h === 'kondisi') statusCol = c;
-      else if (h === 'note' || h === 'catatan' || h === 'keterangan') noteCol = c;
-      else if (h === 'updatedat' || h === 'update' || h === 'waktuupdate') updateCol = c;
+      if (h === 'idtiket' || h === 'notiket' || h === 'id') idCol = c;
+      else if (h === 'statustiket' || h === 'status') statusCol = c;
+      else if (h === 'note' || h === 'catatan') noteCol = c;
+      else if (h === 'updatedat' || h === 'update') updateCol = c;
+      else if (h === 'closedat') closedCol = c;
     }
 
     var targetRowIndex = -1;
+    var currentStatus = '';
+
     for (var i = 1; i < allData.length; i++) {
       if (String(allData[i][idCol]).trim() === String(ticketId).trim()) {
         targetRowIndex = i + 1;
+        currentStatus = String(allData[i][statusCol]).trim();
         break;
       }
     }
@@ -371,15 +309,46 @@ function updateTicketStatus(ticketId, newStatus, additionalNote) {
       return { status: 'error', message: 'Tiket ' + ticketId + ' tidak ditemukan di database' };
     }
 
-    var now = new Date();
-    var updatedAt = Utilities.formatDate(now, 'Asia/Jakarta', 'yyyy-MM-dd HH:mm:ss');
+    var role = (userContext && userContext.roleKey) ? userContext.roleKey.toLowerCase() : '';
 
-    sheet.getRange(targetRowIndex, statusCol + 1).setValue(newStatus);
-    if (updateCol < lastCol) {
-      sheet.getRange(targetRowIndex, updateCol + 1).setValue(updatedAt);
+    // Validasi Rules Khusus Role FSE:
+    if (role === 'fse') {
+      var curLower = currentStatus.toLowerCase();
+      var newLower = newStatus.toLowerCase();
+
+      // Rule 1: Jika sudah appointment, FSE tidak bisa kembali ke respon
+      if (curLower === 'appointment' && newLower === 'respon') {
+        return { status: 'error', message: 'Tiket yang sudah di tahap Appointment tidak dapat dikembalikan ke Respon!' };
+      }
+
+      // Rule 2: Jika sudah solving / solved, FSE tidak bisa kembali ke action mana pun
+      if (curLower === 'solving' || curLower === 'solved') {
+        return { status: 'error', message: 'Tiket sudah berstatus Solved dan telah dikunci. Menunggu verifikasi Closed oleh Monitoring.' };
+      }
+
+      // Rule 3: Jika cancel, hanya bisa diubah melalui role monitoring
+      if (curLower === 'cancel' || curLower === 'batal') {
+        return { status: 'error', message: 'Tiket yang dibatalkan (Cancel) hanya dapat diaktifkan kembali oleh Petugas Monitoring.' };
+      }
+
+      // Rule 4: FSE tidak boleh langsung menaikkan status menjadi Closed (wewenang Monitoring)
+      if (newLower === 'closed') {
+        return { status: 'error', message: 'Status Closed hanya dapat diterbitkan oleh Monitoring Officer setelah verifikasi pekerjaan selesai.' };
+      }
     }
 
-    if (additionalNote && String(additionalNote).trim() !== '' && noteCol < lastCol) {
+    var now = new Date();
+    var nowFormatted = Utilities.formatDate(now, 'Asia/Jakarta', 'yyyy-MM-dd HH:mm:ss');
+
+    sheet.getRange(targetRowIndex, statusCol + 1).setValue(newStatus);
+    sheet.getRange(targetRowIndex, updateCol + 1).setValue(nowFormatted);
+
+    // Jika status dinaikkan menjadi Closed, catat timestamp Closed_At
+    if (newStatus.toLowerCase() === 'closed') {
+      sheet.getRange(targetRowIndex, closedCol + 1).setValue(nowFormatted);
+    }
+
+    if (additionalNote && String(additionalNote).trim() !== '') {
       var curNote = sheet.getRange(targetRowIndex, noteCol + 1).getDisplayValue();
       var combinedNote = curNote ? (curNote + ' | [' + newStatus + ']: ' + additionalNote) : ('[' + newStatus + ']: ' + additionalNote);
       sheet.getRange(targetRowIndex, noteCol + 1).setValue(combinedNote);
@@ -391,7 +360,61 @@ function updateTicketStatus(ticketId, newStatus, additionalNote) {
       status: 'success',
       ticketId: ticketId,
       newStatus: newStatus,
-      updatedAt: updatedAt
+      updatedAt: nowFormatted
+    };
+  } catch (err) {
+    return { status: 'error', message: err.toString() };
+  }
+}
+
+function markHardcopyReceived(ticketId, adminUser) {
+  try {
+    var ss = getSpreadsheet();
+    var sheet = findTicketsSheet(ss);
+    if (!sheet) return { status: 'error', message: 'Sheet Tickets tidak ditemukan' };
+
+    var lastRow = sheet.getLastRow();
+    var lastCol = Math.max(sheet.getLastColumn(), 16);
+    var allData = sheet.getRange(1, 1, lastRow, lastCol).getDisplayValues();
+    var headers = allData[0];
+
+    var idCol = 0, hardcopyCol = 13, rcvDateCol = 14, rcvByCol = 15;
+
+    for (var c = 0; c < headers.length; c++) {
+      var h = String(headers[c] || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+      if (h === 'idtiket' || h === 'notiket') idCol = c;
+      else if (h === 'hardcopystatus' || h === 'statushardcopy') hardcopyCol = c;
+      else if (h === 'hardcopyreceivedat' || h === 'tglditerima') rcvDateCol = c;
+      else if (h === 'hardcopyreceivedby' || h === 'penerima') rcvByCol = c;
+    }
+
+    var targetRow = -1;
+    for (var i = 1; i < allData.length; i++) {
+      if (String(allData[i][idCol]).trim() === String(ticketId).trim()) {
+        targetRow = i + 1;
+        break;
+      }
+    }
+
+    if (targetRow === -1) {
+      return { status: 'error', message: 'Tiket ' + ticketId + ' tidak ditemukan' };
+    }
+
+    var now = new Date();
+    var nowFormatted = Utilities.formatDate(now, 'Asia/Jakarta', 'yyyy-MM-dd HH:mm:ss');
+    var adminName = (adminUser && adminUser.name) ? adminUser.name : 'Administrator';
+
+    sheet.getRange(targetRow, hardcopyCol + 1).setValue('Diterima');
+    sheet.getRange(targetRow, rcvDateCol + 1).setValue(nowFormatted);
+    sheet.getRange(targetRow, rcvByCol + 1).setValue(adminName);
+
+    SpreadsheetApp.flush();
+
+    return {
+      status: 'success',
+      message: 'Hardcopy tiket ' + ticketId + ' berhasil diverifikasi & diterima oleh ' + adminName,
+      receivedAt: nowFormatted,
+      receivedBy: adminName
     };
   } catch (err) {
     return { status: 'error', message: err.toString() };

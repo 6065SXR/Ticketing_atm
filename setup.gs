@@ -1,7 +1,7 @@
 /**
  * Hardiansyah Fam - ATM Problem Ticketing System
  * File: setup.gs
- * Fungsi: Inisialisasi Database, Safe Migrate (Tanpa menghapus data), dan Penyiapan Counter Tiket Harian.
+ * Fungsi: Inisialisasi Database, Safe Migrate (Tanpa menghapus data), dan Penyiapan Sheet FSE & Counter Tiket.
  */
 
 var SHEET_NAMES = {
@@ -10,7 +10,8 @@ var SHEET_NAMES = {
   MACHINES: 'Machines',
   ENGINEERS: 'Engineers',
   COUNTER: 'Counter_Ticket',
-  USERS: 'Users'
+  USERS: 'Users',
+  FSE: 'FSE'
 };
 
 var HEADERS = {
@@ -37,13 +38,18 @@ var HEADERS = {
   Users: [
     'User_ID', 'Nama_Lengkap', 'No_HP', 'Password', 
     'Role', 'Wilayah_Tugas', 'Status_Akun', 'Created_By', 'Created_At'
+  ],
+  FSE: [
+    'User_ID', 'Nama_Lengkap', 'No_HP', 'Password', 
+    'Role', 'Wilayah_Tugas', 'Status_Akun', 'Jumlah_Kelolaan_Mesin', 
+    'Created_By', 'Created_At'
   ]
 };
 
 /**
  * Menjalankan migrasi aman (Safe Migrate).
  * DILARANG KERAS MENGHAPUS / CLEAR DATA PENGGUNA.
- * Hanya membuat sheet jika belum ada, atau melengkapi header pada baris pertama jika masih kosong.
+ * Membuat sheet jika belum ada, memperbarui header, serta menyinkronkan sheet FSE dari Users.
  */
 function runSafeMigration() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -60,27 +66,23 @@ function runSafeMigration() {
       logMessages.push('Sheet [' + sheetName + '] berhasil dibuat.');
     }
 
-    // Periksa apakah sheet sudah memiliki data
     var lastRow = sheet.getLastRow();
     var lastCol = sheet.getLastColumn();
     var targetHeaders = HEADERS[sheetName];
 
     if (lastRow === 0 || lastCol === 0) {
-      // Sheet benar-benar kosong, masukkan header
       sheet.getRange(1, 1, 1, targetHeaders.length).setValues([targetHeaders]);
       sheet.getRange(1, 1, 1, targetHeaders.length).setFontWeight('bold').setBackground('#1e293b').setFontColor('#38bdf8');
       sheet.setFrozenRows(1);
       logMessages.push('Header diinisialisasi untuk sheet [' + sheetName + '].');
 
-      // Masukkan initial dummy data jika ini adalah sheet baru
-      populateInitialDummyData(sheet, sheetName);
+      populateInitialDummyData(sheet, sheetName, ss);
     } else {
-      // Safe update header row 1 tanpa menyentuh data baris 2 ke bawah
       var currentHeaderRange = sheet.getRange(1, 1, 1, targetHeaders.length);
       currentHeaderRange.setValues([targetHeaders]);
       sheet.getRange(1, 1, 1, targetHeaders.length).setFontWeight('bold').setBackground('#1e293b').setFontColor('#38bdf8');
       sheet.setFrozenRows(1);
-      logMessages.push('Header diverifikasi & diperbarui dengan aman untuk [' + sheetName + ']. Data pengguna tetap utuh.');
+      logMessages.push('Header diverifikasi & diperbarui dengan aman untuk [' + sheetName + '].');
     }
   }
 
@@ -90,10 +92,9 @@ function runSafeMigration() {
 }
 
 /**
- * Mengisi data dummy awal hanya ketika sheet baru dibuat / kosong.
- * Berisi data Master Bank, Mesin ATM, FSE, Tiket awal, dan Akun Pengguna (Users).
+ * Mengisi data awal ketika sheet baru dibuat / masih kosong.
  */
-function populateInitialDummyData(sheet, sheetName) {
+function populateInitialDummyData(sheet, sheetName, ss) {
   var now = new Date();
   var dateStr = Utilities.formatDate(now, 'Asia/Jakarta', 'yyyy-MM-dd');
   var timeStr = Utilities.formatDate(now, 'Asia/Jakarta', 'HH:mm:ss');
@@ -109,6 +110,43 @@ function populateInitialDummyData(sheet, sheetName) {
       ['USR-005', 'Dimas Kurniawan', '081733445566', 'fse123', 'FSE', 'Jakarta Timur & Bekasi', 'Aktif', 'System', nowFormatted]
     ];
     sheet.getRange(2, 1, usersData.length, usersData[0].length).setValues(usersData);
+  }
+
+  if (sheetName === SHEET_NAMES.FSE) {
+    var userSheet = ss ? ss.getSheetByName(SHEET_NAMES.USERS) : null;
+    var fseData = [];
+
+    if (userSheet && userSheet.getLastRow() > 1) {
+      var allUsers = userSheet.getRange(2, 1, userSheet.getLastRow() - 1, userSheet.getLastColumn()).getDisplayValues();
+      for (var u = 0; u < allUsers.length; u++) {
+        var row = allUsers[u];
+        var role = String(row[4] || '').toUpperCase();
+        if (role === 'FSE') {
+          fseData.push([
+            row[0], // User_ID
+            row[1], // Nama_Lengkap
+            row[2], // No_HP
+            row[3], // Password
+            'FSE',  // Role
+            row[5], // Wilayah_Tugas
+            row[6] || 'Aktif', // Status_Akun
+            5,      // Jumlah_Kelolaan_Mesin (Default)
+            row[7] || 'System', // Created_By
+            row[8] || nowFormatted // Created_At
+          ]);
+        }
+      }
+    }
+
+    if (fseData.length === 0) {
+      fseData = [
+        ['USR-003', 'Rizky Hardiansyah', '081299881122', 'fse123', 'FSE', 'Jakarta Pusat & Barat', 'Aktif', 8, 'System', nowFormatted],
+        ['USR-004', 'Fajar Ramadhan', '081377665544', 'fse123', 'FSE', 'Jakarta Selatan & Depok', 'Aktif', 6, 'System', nowFormatted],
+        ['USR-005', 'Dimas Kurniawan', '081733445566', 'fse123', 'FSE', 'Jakarta Timur & Bekasi', 'Aktif', 7, 'System', nowFormatted]
+      ];
+    }
+
+    sheet.getRange(2, 1, fseData.length, fseData[0].length).setValues(fseData);
   }
 
   if (sheetName === SHEET_NAMES.CUSTOMERS) {
@@ -138,9 +176,9 @@ function populateInitialDummyData(sheet, sheetName) {
 
   if (sheetName === SHEET_NAMES.ENGINEERS) {
     var engineersData = [
-      ['ENG-01', 'Rizky Hardiansyah', 'Jakarta Pusat & Barat', '081299881122', 'Aktif'],
-      ['ENG-02', 'Fajar Ramadhan', 'Jakarta Selatan & Depok', '081377665544', 'Aktif'],
-      ['ENG-03', 'Dimas Kurniawan', 'Jakarta Timur & Bekasi', '081733445566', 'Aktif'],
+      ['USR-003', 'Rizky Hardiansyah', 'Jakarta Pusat & Barat', '081299881122', 'Aktif'],
+      ['USR-004', 'Fajar Ramadhan', 'Jakarta Selatan & Depok', '081377665544', 'Aktif'],
+      ['USR-005', 'Dimas Kurniawan', 'Jakarta Timur & Bekasi', '081733445566', 'Aktif'],
       ['ENG-04', 'Teguh Wicaksono', 'Jakarta Utara & Tangerang', '081922338877', 'Aktif'],
       ['ENG-05', 'Bayu Anggoro', 'Bandung & Sekitarnya', '081155667788', 'Aktif']
     ];

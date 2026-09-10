@@ -1,0 +1,32 @@
+<!-- SECTION: FSE (FIELD SERVICE ENGINEER) -->
+<section id="sec-FSE" class="view-section space-y-4 hidden">
+  <div class="soft-card-panel p-5">
+    
+    <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-4 pb-3 border-b border-slate-200/60">
+      <div>
+        <h3 class="font-bold text-sm text-slate-800 flex items-center gap-2">
+          <i class="fa-solid fa-users-gear text-teal-600"></i>
+          <span>Daftar Field Service Engineer (FSE)</span>
+        </h3>
+        <p class="text-xs text-slate-500 mt-0.5">Direktori Teknisi & Ketersediaan Penugasan ATM di Lapangan</p>
+      </div>
+
+      <!-- Tombol Khusus Role Monitoring: Tambah FSE Baru -->
+      <div id="container-monitoring-fse-action" class="w-full sm:w-auto">
+        <button id="btn-open-create-fse" onclick="openCreateFSEModal()" 
+          class="w-full sm:w-auto soft-btn-primary text-xs font-semibold px-4 py-2 rounded-xl flex items-center justify-center gap-2 shadow-sm transition">
+          <i class="fa-solid fa-user-plus text-[11px]"></i>
+          <span>Tambah Akun FSE Baru</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Container Grid Kartu Teknisi -->
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4" id="fse-grid-container">
+      <div class="col-span-3 text-center py-8 text-slate-400 font-mono text-xs">
+        <i class="fa-solid fa-spinner fa-spin text-teal-600 mr-2"></i>Memuat direktori teknisi dari database...
+      </div>
+    </div>
+
+  </div>
+</section>

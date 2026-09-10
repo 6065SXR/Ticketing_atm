@@ -100,7 +100,7 @@
   </div>
 </div>
 
-<!-- MODAL: DAFTARKAN AKUN FSE BARU (KHUSUS ROLE MONITORING) -->
+<!-- MODAL: DAFTARKAN AKUN FSE BARU -->
 <div id="modal-create-fse" class="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4 z-50 hidden">
   <div class="bg-white/95 backdrop-blur-xl w-full max-w-md p-6 rounded-2xl border border-white shadow-2xl relative">
     
@@ -110,11 +110,11 @@
 
     <div class="flex items-center gap-3 mb-5 border-b border-slate-200/80 pb-3.5">
       <div class="w-10 h-10 rounded-xl bg-teal-50 border border-teal-200 flex items-center justify-center text-teal-700">
-        <i class="fa-solid fa-user-shield text-base"></i>
+        <i class="fa-solid fa-user-plus text-base"></i>
       </div>
       <div>
         <h3 class="font-bold text-sm text-slate-800 tracking-tight">DAFTARKAN AKUN FSE BARU</h3>
-        <p class="text-[11px] text-slate-500">Otoritas Pendaftaran oleh Petugas Monitoring</p>
+        <p class="text-[11px] text-slate-500">Pendaftaran Teknisi Lapangan oleh Monitoring</p>
       </div>
     </div>
 
@@ -126,26 +126,33 @@
       </div>
 
       <div>
-        <label class="block text-slate-700 font-semibold mb-1">Nomor Handphone (Username Login) *</label>
+        <label class="block text-slate-700 font-semibold mb-1">Nomor Handphone (Login Akun) *</label>
         <input type="text" id="input-fse-hp" required placeholder="Contoh: 081298765432" 
           class="soft-input w-full px-3 py-2 rounded-xl font-mono">
       </div>
 
       <div>
-        <label class="block text-slate-700 font-semibold mb-1">Password Akun Baru *</label>
-        <input type="text" id="input-fse-password" required placeholder="Masukkan kata sandi (bebas)" 
+        <label class="block text-slate-700 font-semibold mb-1">Password Akun *</label>
+        <input type="text" id="input-fse-password" required placeholder="Masukkan kata sandi awal" 
           class="soft-input w-full px-3 py-2 rounded-xl">
       </div>
 
-      <div>
-        <label class="block text-slate-700 font-semibold mb-1">Wilayah / Area Tugas *</label>
-        <input type="text" id="input-fse-wilayah" required placeholder="Contoh: Jakarta Barat & Tangerang" 
-          class="soft-input w-full px-3 py-2 rounded-xl">
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="block text-slate-700 font-semibold mb-1">Wilayah / Area Tugas *</label>
+          <input type="text" id="input-fse-wilayah" required placeholder="Contoh: Jakarta Barat" 
+            class="soft-input w-full px-3 py-2 rounded-xl">
+        </div>
+        <div>
+          <label class="block text-slate-700 font-semibold mb-1">Kelolaan Mesin *</label>
+          <input type="number" id="input-fse-mesin" required value="5" min="0" 
+            class="soft-input w-full px-3 py-2 rounded-xl font-mono font-bold text-teal-800">
+        </div>
       </div>
 
       <div class="p-2.5 rounded-xl bg-teal-50/70 border border-teal-100 text-[11px] text-teal-800 mt-2">
         <i class="fa-solid fa-circle-check mr-1 text-teal-600"></i>
-        Akun otomatis tersimpan di sheet <b>Users</b> dan dapat langsung menerima penugasan tiket.
+        Data tersinkron otomatis ke sheet <b>FSE</b> &amp; <b>Users</b>, serta langsung menerima penugasan.
       </div>
 
       <div class="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-200/80">
@@ -154,7 +161,84 @@
         </button>
         <button type="submit" id="btn-submit-fse" class="soft-btn-primary font-semibold px-5 py-2 rounded-xl flex items-center gap-1.5">
           <i class="fa-solid fa-save"></i>
-          <span>Simpan & Aktifkan</span>
+          <span>Simpan &amp; Aktifkan</span>
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- MODAL: EDIT DATA FSE & KELOLAAN MESIN (CRUD MONITORING) -->
+<div id="modal-edit-fse" class="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4 z-50 hidden">
+  <div class="bg-white/95 backdrop-blur-xl w-full max-w-md p-6 rounded-2xl border border-white shadow-2xl relative">
+    
+    <button onclick="closeEditFSEModal()" class="absolute top-5 right-5 text-slate-400 hover:text-slate-600 text-lg">
+      <i class="fa-solid fa-xmark"></i>
+    </button>
+
+    <div class="flex items-center gap-3 mb-5 border-b border-slate-200/80 pb-3.5">
+      <div class="w-10 h-10 rounded-xl bg-teal-50 border border-teal-200 flex items-center justify-center text-teal-700">
+        <i class="fa-solid fa-user-pen text-base"></i>
+      </div>
+      <div>
+        <h3 class="font-bold text-sm text-slate-800 tracking-tight">EDIT DATA FSE &amp; KELOLAAN MESIN</h3>
+        <p class="text-[11px] text-slate-500">Pembaruan profil teknisi dan alokasi mesin ATM</p>
+      </div>
+    </div>
+
+    <form id="form-edit-fse" onsubmit="handleEditFSESubmit(event)" class="space-y-3.5 text-xs">
+      <div>
+        <label class="block text-slate-700 font-semibold mb-1">ID Karyawan (User_ID)</label>
+        <input type="text" id="edit-fse-userid" readonly 
+          class="soft-input w-full px-3 py-2 rounded-xl font-mono font-bold text-teal-800 bg-slate-100/80 cursor-not-allowed">
+      </div>
+
+      <div>
+        <label class="block text-slate-700 font-semibold mb-1">Nama Lengkap Teknisi *</label>
+        <input type="text" id="edit-fse-nama" required 
+          class="soft-input w-full px-3 py-2 rounded-xl">
+      </div>
+
+      <div>
+        <label class="block text-slate-700 font-semibold mb-1">Nomor Handphone (No HP) *</label>
+        <input type="text" id="edit-fse-hp" required 
+          class="soft-input w-full px-3 py-2 rounded-xl font-mono">
+      </div>
+
+      <div>
+        <label class="block text-slate-700 font-semibold mb-1">Ganti Password (Opsional)</label>
+        <input type="text" id="edit-fse-password" placeholder="Kosongkan bila tidak ingin mengubah sandi" 
+          class="soft-input w-full px-3 py-2 rounded-xl">
+      </div>
+
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="block text-slate-700 font-semibold mb-1">Wilayah / Area Tugas *</label>
+          <input type="text" id="edit-fse-wilayah" required 
+            class="soft-input w-full px-3 py-2 rounded-xl">
+        </div>
+        <div>
+          <label class="block text-slate-700 font-semibold mb-1">Kelolaan Mesin *</label>
+          <input type="number" id="edit-fse-mesin" required min="0" 
+            class="soft-input w-full px-3 py-2 rounded-xl font-mono font-bold text-teal-800">
+        </div>
+      </div>
+
+      <div>
+        <label class="block text-slate-700 font-semibold mb-1">Status Akun *</label>
+        <select id="edit-fse-status" class="soft-input w-full px-3 py-2 rounded-xl">
+          <option value="Aktif">Aktif</option>
+          <option value="Nonaktif">Nonaktif</option>
+        </select>
+      </div>
+
+      <div class="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-200/80">
+        <button type="button" onclick="closeEditFSEModal()" class="px-4 py-2 rounded-xl bg-slate-100 text-slate-700 hover:bg-slate-200 transition font-medium">
+          Batal
+        </button>
+        <button type="submit" id="btn-save-edit-fse" class="soft-btn-primary font-semibold px-5 py-2 rounded-xl flex items-center gap-1.5">
+          <i class="fa-solid fa-save"></i>
+          <span>Simpan Perubahan</span>
         </button>
       </div>
     </form>

@@ -1,0 +1,122 @@
+<!-- SECTION: DASHBOARD -->
+<section id="sec-Dashboard" class="view-section space-y-5">
+  
+  <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+    <div class="soft-card-panel p-4 flex items-center gap-3.5">
+      <div class="w-11 h-11 rounded-2xl bg-teal-50 border border-teal-200/60 flex items-center justify-center text-teal-600 text-lg">
+        <i class="fa-solid fa-ticket"></i>
+      </div>
+      <div>
+        <p class="text-[11px] text-slate-400 uppercase font-semibold">TOTAL TIKET</p>
+        <div id="stat-total" class="text-2xl font-bold text-slate-800 font-mono">0</div>
+        <p class="text-[10px] text-teal-600 font-medium">Realtime database</p>
+      </div>
+    </div>
+
+    <div class="soft-card-panel p-4 flex items-center gap-3.5">
+      <div class="w-11 h-11 rounded-2xl bg-amber-50 border border-amber-200/60 flex items-center justify-center text-amber-600 text-lg">
+        <i class="fa-solid fa-triangle-exclamation"></i>
+      </div>
+      <div>
+        <p class="text-[11px] text-slate-400 uppercase font-semibold">OPEN / RESPON</p>
+        <div id="stat-open" class="text-2xl font-bold text-amber-600 font-mono">0</div>
+        <p class="text-[10px] text-amber-600 font-medium">Menunggu tindakan</p>
+      </div>
+    </div>
+
+    <div class="soft-card-panel p-4 flex items-center gap-3.5">
+      <div class="w-11 h-11 rounded-2xl bg-blue-50 border border-blue-200/60 flex items-center justify-center text-blue-600 text-lg">
+        <i class="fa-solid fa-screwdriver-wrench"></i>
+      </div>
+      <div>
+        <p class="text-[11px] text-slate-400 uppercase font-semibold">IN HANDLING</p>
+        <div id="stat-handling" class="text-2xl font-bold text-blue-600 font-mono">0</div>
+        <p class="text-[10px] text-blue-600 font-medium">FSE di lokasi</p>
+      </div>
+    </div>
+
+    <div class="soft-card-panel p-4 flex items-center gap-3.5">
+      <div class="w-11 h-11 rounded-2xl bg-emerald-50 border border-emerald-200/60 flex items-center justify-center text-emerald-600 text-lg">
+        <i class="fa-solid fa-circle-check"></i>
+      </div>
+      <div>
+        <p class="text-[11px] text-slate-400 uppercase font-semibold">SOLVED TODAY</p>
+        <div id="stat-solved" class="text-2xl font-bold text-emerald-600 font-mono">0</div>
+        <p class="text-[10px] text-emerald-600 font-medium">SLA 98.4% Achieved</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-5">
+    <div class="soft-card-panel p-5 lg:col-span-2 flex flex-col">
+      <div class="flex items-center justify-between mb-4">
+        <h3 class="font-bold text-sm text-slate-800 flex items-center gap-2">
+          <i class="fa-solid fa-bolt text-teal-600"></i>
+          <span>Insiden ATM Terkini (Realtime Feed)</span>
+        </h3>
+        <button onclick="navigateTo('Ticket')" class="text-xs text-teal-700 hover:text-teal-900 font-medium hover:underline">Lihat Semua Tiket &rarr;</button>
+      </div>
+      <div class="overflow-x-auto flex-1">
+        <table class="w-full text-left text-xs text-slate-600">
+          <thead class="text-[10px] uppercase bg-slate-100/70 text-slate-500 border-b border-slate-200">
+            <tr>
+              <th class="p-3 font-semibold">ID Tiket</th>
+              <th class="p-3 font-semibold">Bank</th>
+              <th class="p-3 font-semibold">Serial Number</th>
+              <th class="p-3 font-semibold">Engineer</th>
+              <th class="p-3 font-semibold">Status</th>
+            </tr>
+          </thead>
+          <tbody id="dashboard-recent-tickets" class="divide-y divide-slate-100">
+            <!-- Data dimasukkan via JS -->
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="soft-card-panel p-5 flex flex-col justify-between">
+      <div>
+        <h3 class="font-bold text-sm text-slate-800 mb-3 flex items-center gap-2">
+          <i class="fa-solid fa-chart-pie text-teal-600"></i>
+          <span>Distribusi Status Tiket</span>
+        </h3>
+        <div class="space-y-4 text-xs mt-4">
+          <div>
+            <div class="flex justify-between text-slate-600 mb-1">
+              <span>Solving / Selesai</span>
+              <span id="dist-solving" class="font-mono font-semibold text-emerald-600">0%</span>
+            </div>
+            <div class="w-full bg-slate-200/80 h-2 rounded-full overflow-hidden">
+              <div id="dist-bar-solving" class="bg-emerald-500 h-2 rounded-full transition-all duration-500" style="width: 0%"></div>
+            </div>
+          </div>
+
+          <div>
+            <div class="flex justify-between text-slate-600 mb-1">
+              <span>Handling / Appointment</span>
+              <span id="dist-handling" class="font-mono font-semibold text-blue-600">0%</span>
+            </div>
+            <div class="w-full bg-slate-200/80 h-2 rounded-full overflow-hidden">
+              <div id="dist-bar-handling" class="bg-blue-500 h-2 rounded-full transition-all duration-500" style="width: 0%"></div>
+            </div>
+          </div>
+
+          <div>
+            <div class="flex justify-between text-slate-600 mb-1">
+              <span>Open / Respon</span>
+              <span id="dist-open" class="font-mono font-semibold text-amber-600">0%</span>
+            </div>
+            <div class="w-full bg-slate-200/80 h-2 rounded-full overflow-hidden">
+              <div id="dist-bar-open" class="bg-amber-500 h-2 rounded-full transition-all duration-500" style="width: 0%"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="mt-6 p-3.5 rounded-xl bg-teal-50/70 border border-teal-100 text-[11px] text-teal-800">
+        <i class="fa-solid fa-circle-info mr-1 text-teal-600"></i>
+        Sistem dispatching memantau respon insiden dan kepatuhan SLA 24/7.
+      </div>
+    </div>
+  </div>
+</section>

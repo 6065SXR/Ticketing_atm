@@ -2,30 +2,63 @@
 <section id="sec-FSE" class="view-section space-y-4 hidden">
   <div class="soft-card-panel p-5">
     
+    <!-- Toolbar Header: Judul, Search Bar Realtime dengan Tombol X, & Action Button -->
     <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-4 pb-3 border-b border-slate-200/60">
       <div>
         <h3 class="font-bold text-sm text-slate-800 flex items-center gap-2">
           <i class="fa-solid fa-users-gear text-teal-600"></i>
           <span>Daftar Field Service Engineer (FSE)</span>
         </h3>
-        <p class="text-xs text-slate-500 mt-0.5">Direktori Teknisi & Ketersediaan Penugasan ATM di Lapangan</p>
+        <p class="text-xs text-slate-500 mt-0.5">Direktori Teknisi, Kelolaan Mesin ATM & Metrik Produktivitas Bulanan</p>
       </div>
 
-      <!-- Tombol Khusus Role Monitoring: Tambah FSE Baru -->
-      <div id="container-monitoring-fse-action" class="w-full sm:w-auto">
-        <button id="btn-open-create-fse" onclick="openCreateFSEModal()" 
-          class="w-full sm:w-auto soft-btn-primary text-xs font-semibold px-4 py-2 rounded-xl flex items-center justify-center gap-2 shadow-sm transition">
-          <i class="fa-solid fa-user-plus text-[11px]"></i>
-          <span>Tambah Akun FSE Baru</span>
-        </button>
+      <div class="flex flex-wrap items-center gap-3 w-full sm:w-auto">
+        <!-- Realtime Search Input dengan Clear Button (X) -->
+        <div class="relative flex-1 sm:w-64">
+          <i class="fa-solid fa-magnifying-glass absolute left-3 top-2.5 text-slate-400 text-xs"></i>
+          <input type="text" id="filter-fse-search" oninput="handleFSESearchInput()" placeholder="Cari ID / Nama / Wilayah..." 
+            class="soft-input w-full pl-9 pr-8 py-2 text-xs rounded-xl">
+          <button id="btn-clear-fse-search" type="button" onclick="clearFSESearch()" title="Hapus pencarian"
+            class="absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-600 text-xs hidden transition">
+            <i class="fa-solid fa-circle-xmark"></i>
+          </button>
+        </div>
+
+        <!-- Tombol Khusus Role Monitoring: Tambah FSE Baru -->
+        <div id="container-monitoring-fse-action">
+          <button id="btn-open-create-fse" onclick="openCreateFSEModal()" 
+            class="soft-btn-primary text-xs font-semibold px-4 py-2 rounded-xl flex items-center justify-center gap-2 shadow-sm transition">
+            <i class="fa-solid fa-user-plus text-[11px]"></i>
+            <span>Tambah Akun FSE Baru</span>
+          </button>
+        </div>
       </div>
     </div>
 
-    <!-- Container Grid Kartu Teknisi -->
-    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4" id="fse-grid-container">
-      <div class="col-span-3 text-center py-8 text-slate-400 font-mono text-xs">
-        <i class="fa-solid fa-spinner fa-spin text-teal-600 mr-2"></i>Memuat direktori teknisi dari database...
-      </div>
+    <!-- Data Table FSE (Format Grid Excel) -->
+    <div class="overflow-x-auto rounded-xl border border-slate-200 bg-white/60">
+      <table class="w-full text-left text-xs text-slate-600">
+        <thead class="text-[10px] uppercase bg-slate-100/80 text-slate-700 border-b border-slate-200">
+          <tr>
+            <th class="p-3 font-semibold whitespace-nowrap">ID Karyawan</th>
+            <th class="p-3 font-semibold whitespace-nowrap">Nama FSE</th>
+            <th class="p-3 font-semibold whitespace-nowrap">Wilayah Tugas</th>
+            <th class="p-3 font-semibold text-center whitespace-nowrap">Kelolaan Mesin</th>
+            <th class="p-3 font-semibold text-center whitespace-nowrap">Tiket CM (Bln Ini)</th>
+            <th class="p-3 font-semibold text-center whitespace-nowrap">Pencapaian PM (Bln Ini)</th>
+            <th class="p-3 font-semibold text-center whitespace-nowrap">Status</th>
+            <th class="p-3 font-semibold text-center whitespace-nowrap" id="th-fse-action">Aksi</th>
+          </tr>
+        </thead>
+        <tbody id="fse-table-body" class="divide-y divide-slate-100">
+          <!-- Diisi secara dinamis melalui javascript.html -->
+          <tr>
+            <td colspan="8" class="text-center py-8 text-slate-400 font-mono text-xs">
+              <i class="fa-solid fa-spinner fa-spin text-teal-600 mr-2"></i>Memuat direktori teknisi dari database...
+            </td>
+          </tr>
+        </tbody>
+      </table>
     </div>
 
   </div>

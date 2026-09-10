@@ -1,0 +1,53 @@
+<!-- SECTION: DATA PM (PREVENTIVE MAINTENANCE) -->
+<section id="sec-DataPM" class="view-section space-y-4 hidden">
+  <div class="soft-card-panel p-5">
+    
+    <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-4">
+      <div>
+        <h3 class="font-bold text-sm text-slate-800 flex items-center gap-2">
+          <i class="fa-solid fa-calendar-check text-teal-600"></i>
+          <span>Jadwal & Riwayat Preventive Maintenance (Data PM)</span>
+        </h3>
+        <p class="text-xs text-slate-500 mt-0.5">Monitoring Siklus Perawatan Berkala Mesin ATM & Kunjungan Servis</p>
+      </div>
+      
+      <div class="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+        <div class="relative flex-1 sm:w-56">
+          <i class="fa-solid fa-magnifying-glass absolute left-3 top-2.5 text-slate-400 text-xs"></i>
+          <input type="text" id="filter-pm-search" oninput="filterPMTableClientSide()" placeholder="Cari SN / ATM / Lokasi..." 
+            class="soft-input w-full pl-9 pr-3 py-1.5 text-xs rounded-xl">
+        </div>
+
+        <select id="filter-pm-status" onchange="filterPMTableClientSide()" class="soft-input px-3 py-1.5 text-xs rounded-xl">
+          <option value="ALL">Semua Status</option>
+          <option value="Scheduled">Scheduled</option>
+          <option value="In Progress">In Progress</option>
+          <option value="Completed">Completed</option>
+          <option value="Overdue">Overdue</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="overflow-x-auto rounded-xl border border-slate-200 bg-white/60">
+      <table class="w-full text-left text-xs text-slate-600">
+        <thead class="text-[10px] uppercase bg-slate-100/80 text-slate-700 border-b border-slate-200">
+          <tr>
+            <th class="p-3 font-semibold">ID PM</th>
+            <th class="p-3 font-semibold">Bank & Mesin</th>
+            <th class="p-3 font-semibold">Lokasi ATM</th>
+            <th class="p-3 font-semibold">Periode</th>
+            <th class="p-3 font-semibold">Target Jadwal</th>
+            <th class="p-3 font-semibold">Realisasi</th>
+            <th class="p-3 font-semibold">Engineer PIC</th>
+            <th class="p-3 font-semibold">Status</th>
+            <th class="p-3 font-semibold">Keterangan</th>
+          </tr>
+        </thead>
+        <tbody id="pm-table-body" class="divide-y divide-slate-100">
+          <!-- Diisi secara dinamis melalui javascript.html -->
+        </tbody>
+      </table>
+    </div>
+
+  </div>
+</section>

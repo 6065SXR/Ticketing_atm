@@ -1,0 +1,77 @@
+<!-- VIEW 1: TRANSPARENT FROSTED GLASS LOGIN FRAME -->
+<section id="login-view" class="frosted-glass-slab w-full max-w-md p-7 sm:p-9 flex flex-col items-center justify-center z-10 transition-all duration-300 shadow-2xl">
+  
+  <div class="w-14 h-14 rounded-2xl bg-teal-600/10 border border-teal-500/20 flex items-center justify-center text-teal-700 shadow-sm mb-4">
+    <i class="fa-solid fa-server text-2xl"></i>
+  </div>
+  <h2 class="text-xl font-extrabold text-slate-800 tracking-tight text-center">
+    HARDIANSYAH <span class="text-teal-600">FAM</span>
+  </h2>
+  <p class="text-xs text-slate-500 font-medium tracking-wide text-center mt-1 uppercase">
+    ATM Maintenance Ticketing System
+  </p>
+
+  <!-- Login Form Header Badge -->
+  <div class="w-full mt-6 mb-4 p-2.5 rounded-xl bg-teal-50/70 border border-teal-100 flex items-center justify-between text-xs text-teal-800">
+    <span class="flex items-center gap-1.5 font-medium">
+      <i class="fa-solid fa-shield-halved text-teal-600"></i>
+      <span>Sistem Kredensial Database</span>
+    </span>
+    <span id="role-badge-label" class="text-[10px] px-2 py-0.5 rounded-full bg-white text-teal-700 font-mono font-bold shadow-sm">
+      DATABASE LOGIN
+    </span>
+  </div>
+
+  <form id="form-login" onsubmit="handleLoginSubmit(event)" class="w-full space-y-4 text-xs">
+    <!-- Input 1: Nomor Handphone (Username Utama) -->
+    <div>
+      <label class="block text-slate-700 font-semibold mb-1.5 flex items-center justify-between">
+        <span>Nomor Handphone (No HP) *</span>
+        <span class="text-[10px] text-slate-400 font-mono font-normal">Contoh: 0812xxxx</span>
+      </label>
+      <div class="relative">
+        <i class="fa-solid fa-phone absolute left-3.5 top-3 text-slate-400"></i>
+        <input type="text" id="login-username" required placeholder="081200000002" 
+          class="soft-input w-full pl-10 pr-3.5 py-2.5 rounded-xl font-mono font-semibold tracking-wide text-slate-800">
+      </div>
+    </div>
+
+    <!-- Input 2: Password Bebas -->
+    <div>
+      <label class="block text-slate-700 font-semibold mb-1.5 flex items-center justify-between">
+        <span>Password *</span>
+        <button type="button" onclick="togglePasswordVisibility()" class="text-[10px] text-teal-700 hover:underline">Lihat</button>
+      </label>
+      <div class="relative">
+        <i class="fa-solid fa-lock absolute left-3.5 top-3 text-slate-400"></i>
+        <input type="password" id="login-password" required value="monitoring123" placeholder="Masukkan password" 
+          class="soft-input w-full pl-10 pr-10 py-2.5 rounded-xl font-medium">
+        <i id="eye-icon" onclick="togglePasswordVisibility()" class="fa-regular fa-eye absolute right-3.5 top-3 text-slate-400 cursor-pointer hover:text-slate-600"></i>
+      </div>
+    </div>
+
+    <div class="pt-2">
+      <button type="submit" id="btn-login-submit" class="w-full soft-btn-primary py-3 rounded-xl font-semibold text-xs flex items-center justify-center gap-2 shadow-md">
+        <i class="fa-solid fa-arrow-right-to-bracket"></i>
+        <span id="btn-login-text">Masuk ke Sistem</span>
+      </button>
+    </div>
+  </form>
+
+  <!-- Quick Demo Helper -->
+  <div class="w-full mt-6 pt-5 border-t border-slate-200/80 text-[11px] text-slate-500">
+    <p class="text-center font-medium mb-2.5">Atau Masuk Cepat Menggunakan Akun Terdaftar:</p>
+    <div class="grid grid-cols-3 gap-2">
+      <button type="button" onclick="quickLoginDemo('monitoring')" class="py-1.5 px-2 rounded-xl bg-teal-50 border border-teal-200 text-teal-800 hover:bg-teal-100 font-semibold transition text-center shadow-sm">
+        Monitoring
+      </button>
+      <button type="button" onclick="quickLoginDemo('fse')" class="py-1.5 px-2 rounded-xl bg-white border border-slate-200 text-slate-700 hover:bg-teal-50 hover:text-teal-700 font-medium transition text-center shadow-sm">
+        FSE Rizky
+      </button>
+      <button type="button" onclick="quickLoginDemo('admin')" class="py-1.5 px-2 rounded-xl bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 font-medium transition text-center shadow-sm">
+        Admin Ops
+      </button>
+    </div>
+  </div>
+
+</section>

@@ -1,61 +1,10 @@
 /**
  * Hardiansyah Fam - ATM Problem Ticketing System
  * File: fse.gs
- * Fungsi: Master Controller Sheet "FSE", Sinkronisasi Sheet "Users", Perhitungan Metrik CM & PM Bulanan, dan CRUD FSE.
+ * Fungsi: Master Controller Sheet "FSE", Import CSV Teknisi,
+ *         Sinkronisasi Sheet "Users", Perhitungan Metrik CM & PM Bulanan, dan CRUD FSE.
  */
 
-function findOrCreateFSESheet(ss) {
-  var sheet = findSheet(ss, ['FSE', 'Data FSE', 'Data_FSE', 'Master_FSE']);
-  if (!sheet) {
-    sheet = ss.insertSheet('FSE');
-    var headers = [
-      'User_ID', 'Nama_Lengkap', 'No_HP', 'Password', 
-      'Role', 'Wilayah_Tugas', 'Status_Akun', 'Jumlah_Kelolaan_Mesin', 
-      'Created_By', 'Created_At'
-    ];
-    sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
-    sheet.getRange(1, 1, 1, headers.length).setFontWeight('bold').setBackground('#0f766e').setFontColor('#ffffff');
-    sheet.setFrozenRows(1);
-
-    // Sinkronisasi awal dari sheet Users yang berstatus FSE
-    var userSheet = findSheet(ss, ['Users', 'User']);
-    if (userSheet && userSheet.getLastRow() > 1) {
-      var allUsers = userSheet.getRange(2, 1, userSheet.getLastRow() - 1, userSheet.getLastColumn()).getDisplayValues();
-      var fseRows = [];
-      for (var u = 0; u < allUsers.length; u++) {
-        var r = allUsers[u];
-        var role = String(r[4] || '').toUpperCase();
-        if (role === 'FSE') {
-          fseRows.push([
-            r[0], // User_ID
-            r[1], // Nama_Lengkap
-            r[2], // No_HP
-            r[3], // Password
-            'FSE',
-            r[5] || 'DKI Jakarta', // Wilayah_Tugas
-            r[6] || 'Aktif',       // Status_Akun
-            5,                     // Default Jumlah Kelolaan Mesin
-            r[7] || 'System',      // Created_By
-            r[8] || Utilities.formatDate(new Date(), 'Asia/Jakarta', 'yyyy-MM-dd HH:mm:ss')
-          ]);
-        }
-      }
-      if (fseRows.length > 0) {
-        sheet.getRange(2, 1, fseRows.length, fseRows[0].length).setValues(fseRows);
-      }
-    }
-    SpreadsheetApp.flush();
-  }
-  return sheet;
-}
-
-/**
- * Mengambil data FSE lengkap dengan:
- * - User_ID (ID Karyawan)
- * - Kelolaan Mesin
- * - Total Tiket Corrective Maintenance (CM) dalam 1 bulan kalender berjalan
- * - Pencapaian Preventive Maintenance (PM) dalam 1 bulan kalender berjalan
- */
 function getFSEData() {
   try {
     var ss = getSpreadsheet();
@@ -64,11 +13,14 @@ function getFSEData() {
     var sheetFSE = findOrCreateFSESheet(ss);
     var fseList = [];
 
-    // Tentukan bulan berjalan (format YYYY-MM)
     var now = new Date();
     var currentMonth = Utilities.formatDate(now, 'Asia/Jakarta', 'yyyy-MM');
 
-    // 1. Ambil data Tiket untuk kalkulasi CM bulan ini
+    // Ambil data mesin untuk menghitung kelolaan mesin aktual
+    var machRes = getMachinesData();
+    var allMachines = (machRes && machRes.data) ? machRes.data : [];
+
+    // Ambil data tiket untuk kalkulasi CM bulan ini
     var ticketSheet = findTicketsSheet(ss);
     var ticketRows = [];
     var tColMap = { engineer: -1, tipe: -1, tanggal: -1 };
@@ -79,67 +31,58 @@ function getFSEData() {
       for (var th = 0; th < tHeaders.length; th++) {
         var thStr = String(tHeaders[th] || '').toLowerCase().replace(/[^a-z0-9]/g, '');
         if (thStr === 'namaengineer' || thStr === 'engineer' || thStr === 'fse' || thStr === 'teknisi') tColMap.engineer = th;
-        else if (thStr === 'tipetiket' || thStr === 'tipe' || thStr === 'type' || thStr === 'jenis') tColMap.tipe = th;
-        else if (thStr === 'tanggaltiket' || thStr === 'tanggal' || thStr === 'date' || thStr === 'tgl') tColMap.tanggal = th;
+        else if (thStr === 'tipetiket' || thStr === 'tipe' || thStr === 'type') tColMap.tipe = th;
+        else if (thStr === 'tanggaltiket' || thStr === 'tanggal' || thStr === 'date') tColMap.tanggal = th;
       }
       ticketRows = tAll.slice(1);
     }
 
-    // 2. Ambil data PM untuk kalkulasi capaian PM bulan ini
+    // Ambil data PM untuk capaian PM bulan ini
     var sheetPM = findSheet(ss, ['Data_PM', 'Data PM', 'DataPM', 'PM', 'Preventive Maintenance']);
     var pmRows = [];
-    var pColMap = { engineer: -1, status: -1, tanggalRencana: -1, tanggalRealisasi: -1, periode: -1 };
+    var pColMap = { engineer: -1, status: -1, tanggalRencana: -1, tanggalRealisasi: -1 };
 
     if (sheetPM && sheetPM.getLastRow() > 1) {
       var pAll = sheetPM.getRange(1, 1, sheetPM.getLastRow(), Math.max(sheetPM.getLastColumn(), 1)).getDisplayValues();
       var pHeaders = pAll[0];
       for (var ph = 0; ph < pHeaders.length; ph++) {
         var phStr = String(pHeaders[ph] || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-        if (phStr === 'engineer' || phStr === 'namaengineer' || phStr === 'fse' || phStr === 'pic') pColMap.engineer = ph;
+        if (phStr === 'engineer' || phStr === 'namaengineer' || phStr === 'fse') pColMap.engineer = ph;
         else if (phStr === 'status' || phStr === 'statuspm') pColMap.status = ph;
-        else if (phStr === 'tanggalrencana' || phStr === 'jadwalpm' || phStr === 'target') pColMap.tanggalRencana = ph;
+        else if (phStr === 'tanggalrencana' || phStr === 'jadwalpm') pColMap.tanggalRencana = ph;
         else if (phStr === 'tanggalrealisasi' || phStr === 'realisasi') pColMap.tanggalRealisasi = ph;
-        else if (phStr === 'periode' || phStr === 'siklus') pColMap.periode = ph;
       }
       pmRows = pAll.slice(1);
     }
 
-    // 3. Baca sheet FSE
     var fLastRow = sheetFSE.getLastRow();
     if (fLastRow > 1) {
       var fAll = sheetFSE.getRange(1, 1, fLastRow, Math.max(sheetFSE.getLastColumn(), 10)).getDisplayValues();
-      var fHeaders = fAll[0];
-      var fColMap = {
-        userId: 0, nama: 1, noHp: 2, password: 3, role: 4,
-        wilayah: 5, status: 6, jumlahMesin: 7
-      };
-
-      for (var fc = 0; fc < fHeaders.length; fc++) {
-        var fch = String(fHeaders[fc] || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-        if (fch === 'userid' || fch === 'id') fColMap.userId = fc;
-        else if (fch === 'namalengkap' || fch === 'nama') fColMap.nama = fc;
-        else if (fch === 'nohp' || fch === 'hp') fColMap.noHp = fc;
-        else if (fch === 'password' || fch === 'pass') fColMap.password = fc;
-        else if (fch === 'wilayahtugas' || fch === 'wilayah') fColMap.wilayah = fc;
-        else if (fch === 'statusakun' || fch === 'status') fColMap.status = fc;
-        else if (fch === 'jumlahkelolaanmesin' || fch === 'kelolaanmesin' || fch === 'mesin') fColMap.jumlahMesin = fc;
-      }
-
       var rows = fAll.slice(1);
+
       for (var i = 0; i < rows.length; i++) {
         var r = rows[i];
         if (!r.some(function(c) { return String(c).trim() !== ''; })) continue;
 
-        var userId = String(r[fColMap.userId] || ('USR-00' + (i + 1))).trim();
-        var namaFSE = String(r[fColMap.nama] || '').trim();
-        var noHp = String(r[fColMap.noHp] || '').trim();
-        var wilayah = String(r[fColMap.wilayah] || '-').trim();
-        var status = String(r[fColMap.status] || 'Aktif').trim();
-        var jumlahMesin = parseInt(r[fColMap.jumlahMesin], 10) || 0;
+        var userId = String(r[0] || ('USR-00' + (i + 1))).trim();
+        var namaFSE = String(r[1] || '').trim();
+        var noHp = String(r[2] || '').trim();
+        var wilayah = String(r[5] || '-').trim();
+        var status = String(r[6] || 'Aktif').trim();
+        var staticKelolaan = parseInt(r[7], 10) || 0;
 
-        // Kalkulasi Total Tiket CM (Bulan Ini)
-        var totalCM = 0;
+        // Hitung kelolaan mesin aktual dari Machines table (jika ada data nama pengelola)
+        var actualKelolaan = 0;
         var namaLower = namaFSE.toLowerCase();
+        for (var m = 0; m < allMachines.length; m++) {
+          if (allMachines[m].fsePengelola && allMachines[m].fsePengelola.toLowerCase() === namaLower) {
+            actualKelolaan++;
+          }
+        }
+        var jumlahMesin = actualKelolaan > 0 ? actualKelolaan : staticKelolaan;
+
+        // Total CM bulan ini
+        var totalCM = 0;
         for (var t = 0; t < ticketRows.length; t++) {
           var tr = ticketRows[t];
           var tEng = String(tr[tColMap.engineer] || '').toLowerCase();
@@ -149,15 +92,12 @@ function getFSEData() {
           if (namaLower && (tEng.indexOf(namaLower) !== -1 || namaLower.indexOf(tEng) !== -1)) {
             var isCM = (tTipe.indexOf('cm') !== -1 || tTipe.indexOf('corrective') !== -1);
             var isThisMonth = (tTgl.indexOf(currentMonth) === 0 || tTgl.indexOf(currentMonth.replace('-', '/')) === 0);
-            if (isCM && isThisMonth) {
-              totalCM++;
-            }
+            if (isCM && isThisMonth) totalCM++;
           }
         }
 
-        // Kalkulasi Capaian PM (Bulan Ini)
-        var pmTarget = 0;
-        var pmCompleted = 0;
+        // Capaian PM bulan ini
+        var pmTarget = 0, pmCompleted = 0;
         for (var p = 0; p < pmRows.length; p++) {
           var pr = pmRows[p];
           var pEng = String(pr[pColMap.engineer] || '').toLowerCase();
@@ -166,26 +106,14 @@ function getFSEData() {
           var pTglRealisasi = String(pr[pColMap.tanggalRealisasi] || '');
 
           if (namaLower && (pEng.indexOf(namaLower) !== -1 || namaLower.indexOf(pEng) !== -1)) {
-            var matchPMMonth = (
-              pTglRencana.indexOf(currentMonth) === 0 || 
-              pTglRealisasi.indexOf(currentMonth) === 0
-            );
-            if (matchPMMonth) {
+            if (pTglRencana.indexOf(currentMonth) === 0 || pTglRealisasi.indexOf(currentMonth) === 0) {
               pmTarget++;
-              if (pStat === 'completed' || pStat === 'selesai') {
-                pmCompleted++;
-              }
+              if (pStat === 'completed' || pStat === 'selesai') pmCompleted++;
             }
           }
         }
 
-        var pmAchievementStr = '-';
-        if (pmTarget > 0) {
-          var pmPercent = Math.round((pmCompleted / pmTarget) * 100);
-          pmAchievementStr = pmCompleted + ' / ' + pmTarget + ' (' + pmPercent + '%)';
-        } else {
-          pmAchievementStr = '0 / 0 (100%)';
-        }
+        var pmAchievementStr = pmTarget > 0 ? (pmCompleted + ' / ' + pmTarget + ' (' + Math.round((pmCompleted / pmTarget) * 100) + '%)') : '0 / 0 (100%)';
 
         fseList.push({
           userId: userId,
@@ -206,18 +134,67 @@ function getFSEData() {
   }
 }
 
-/**
- * Pendaftaran FSE Baru (Menyimpan serentak ke sheet FSE, Users, dan Engineers)
- */
+function importFSECSV(csvRows, currentMonitoringUser) {
+  try {
+    var ss = getSpreadsheet();
+    var fseSheet = findOrCreateFSESheet(ss);
+    var userSheet = findOrCreateUsersSheet(ss);
+
+    var existingHpMap = {};
+    if (userSheet.getLastRow() > 1) {
+      var allU = userSheet.getRange(2, 3, userSheet.getLastRow() - 1, 1).getDisplayValues();
+      for (var u = 0; u < allU.length; u++) {
+        var cleanH = String(allU[u][0] || '').replace(/[^0-9]/g, '');
+        if (cleanH) existingHpMap[cleanH] = true;
+      }
+    }
+
+    var nowFormatted = Utilities.formatDate(new Date(), 'Asia/Jakarta', 'yyyy-MM-dd HH:mm:ss');
+    var creator = (currentMonitoringUser && currentMonitoringUser.name) ? currentMonitoringUser.name : 'Monitoring Officer';
+
+    var insertedCount = 0;
+    var skippedCount = 0;
+
+    for (var i = 0; i < csvRows.length; i++) {
+      var row = csvRows[i];
+      if (!row || row.length === 0) continue;
+
+      var rawNama = String(row[0] || '').trim();
+      var rawHp = String(row[1] || '').replace(/[^0-9]/g, '').trim();
+      var rawPass = String(row[2] || 'fse123').trim();
+      var rawWilayah = String(row[3] || 'DKI Jakarta').trim();
+      var rawKelolaan = parseInt(row[4], 10) || 0;
+
+      if (!rawNama || !rawHp) continue;
+
+      if (existingHpMap[rawHp]) {
+        skippedCount++;
+        continue;
+      }
+
+      existingHpMap[rawHp] = true;
+      var newUserId = 'USR-FSE-' + ('00' + (userSheet.getLastRow() + insertedCount)).slice(-3);
+
+      userSheet.appendRow([newUserId, rawNama, rawHp, rawPass, 'FSE', rawWilayah, 'Aktif', creator, nowFormatted]);
+      fseSheet.appendRow([newUserId, rawNama, rawHp, rawPass, 'FSE', rawWilayah, 'Aktif', rawKelolaan, creator, nowFormatted]);
+      insertedCount++;
+    }
+
+    SpreadsheetApp.flush();
+
+    var msg = insertedCount + ' teknisi FSE berhasil diimpor.';
+    if (skippedCount > 0) msg += ' (' + skippedCount + ' nomor HP dilewati karena sudah terdaftar).';
+
+    return { status: 'success', message: msg, importedCount: insertedCount, skippedCount: skippedCount };
+  } catch (err) {
+    return { status: 'error', message: 'Gagal impor FSE: ' + err.toString() };
+  }
+}
+
 function registerFSE(payload, currentMonitoringUser) {
   try {
     var ss = getSpreadsheet();
     if (!ss) return { status: 'error', message: 'Spreadsheet tidak ditemukan' };
-
-    var creatorRole = (currentMonitoringUser && currentMonitoringUser.roleKey) ? currentMonitoringUser.roleKey.toLowerCase() : '';
-    if (creatorRole !== 'monitoring' && creatorRole !== 'admin') {
-      return { status: 'error', message: 'Hanya Role Monitoring (atau Admin) yang berhak mendaftarkan akun FSE baru!' };
-    }
 
     var nama = String(payload.nama || '').trim();
     var noHp = String(payload.noHp || '').replace(/[^0-9]/g, '').trim();
@@ -232,172 +209,88 @@ function registerFSE(payload, currentMonitoringUser) {
     var fseSheet = findOrCreateFSESheet(ss);
     var userSheet = findOrCreateUsersSheet(ss);
 
-    // Cek duplikasi Nomor HP di Users
     var uLastRow = userSheet.getLastRow();
     if (uLastRow > 1) {
-      var allUsers = userSheet.getRange(2, 1, uLastRow - 1, Math.max(userSheet.getLastColumn(), 3)).getDisplayValues();
+      var allUsers = userSheet.getRange(2, 1, uLastRow - 1, 3).getDisplayValues();
       for (var u = 0; u < allUsers.length; u++) {
         var exHp = String(allUsers[u][2] || '').replace(/[^0-9]/g, '').trim();
-        if (exHp === noHp) {
-          return { status: 'error', message: 'Nomor HP [' + noHp + '] sudah terdaftar pada pengguna lain!' };
-        }
+        if (exHp === noHp) return { status: 'error', message: 'Nomor HP [' + noHp + '] sudah terdaftar!' };
       }
     }
 
     var now = new Date();
     var nowFormatted = Utilities.formatDate(now, 'Asia/Jakarta', 'yyyy-MM-dd HH:mm:ss');
-    var nextUserSeq = (uLastRow > 1) ? ('00' + uLastRow).slice(-3) : '001';
-    var newUserId = 'USR-' + nextUserSeq;
+    var newUserId = 'USR-' + ('00' + (uLastRow + 1)).slice(-3);
     var creatorName = (currentMonitoringUser && currentMonitoringUser.name) ? currentMonitoringUser.name : 'Monitoring Officer';
 
-    // 1. Simpan ke sheet Users
-    userSheet.appendRow([
-      newUserId, nama, noHp, password, 'FSE', wilayah, 'Aktif', creatorName, nowFormatted
-    ]);
-
-    // 2. Simpan ke sheet FSE
-    fseSheet.appendRow([
-      newUserId, nama, noHp, password, 'FSE', wilayah, 'Aktif', kelolaanMesin, creatorName, nowFormatted
-    ]);
-
-    // 3. Simpan ke sheet Engineers (Kompatibilitas data lama)
-    var engSheet = findSheet(ss, ['Engineers', 'Engineer']);
-    if (engSheet) {
-      engSheet.appendRow([newUserId, nama, wilayah, noHp, 'Aktif']);
-    }
+    userSheet.appendRow([newUserId, nama, noHp, password, 'FSE', wilayah, 'Aktif', creatorName, nowFormatted]);
+    fseSheet.appendRow([newUserId, nama, noHp, password, 'FSE', wilayah, 'Aktif', kelolaanMesin, creatorName, nowFormatted]);
 
     SpreadsheetApp.flush();
 
     return {
       status: 'success',
       message: 'Akun FSE [' + nama + '] (' + newUserId + ') berhasil didaftarkan!',
-      fse: {
-        userId: newUserId,
-        nama: nama,
-        noHp: noHp,
-        wilayah: wilayah,
-        status: 'Aktif',
-        jumlahMesin: kelolaanMesin,
-        totalCM: 0,
-        pmAchievement: '0 / 0 (100%)'
-      }
+      fse: { userId: newUserId, nama: nama, noHp: noHp, wilayah: wilayah, status: 'Aktif', jumlahMesin: kelolaanMesin }
     };
   } catch (err) {
     return { status: 'error', message: err.toString() };
   }
 }
 
-/**
- * Pembaruan Data FSE (Update Serentak ke sheet FSE, Users, dan Engineers)
- */
 function updateFSE(payload, currentMonitoringUser) {
   try {
     var ss = getSpreadsheet();
-    if (!ss) return { status: 'error', message: 'Spreadsheet tidak ditemukan' };
-
-    var editorRole = (currentMonitoringUser && currentMonitoringUser.roleKey) ? currentMonitoringUser.roleKey.toLowerCase() : '';
-    if (editorRole !== 'monitoring' && editorRole !== 'admin') {
-      return { status: 'error', message: 'Hanya Role Monitoring (atau Admin) yang berhak mengubah data FSE!' };
-    }
-
     var userId = String(payload.userId || '').trim();
     var nama = String(payload.nama || '').trim();
     var noHp = String(payload.noHp || '').replace(/[^0-9]/g, '').trim();
     var wilayah = String(payload.wilayah || '').trim();
     var kelolaanMesin = parseInt(payload.kelolaanMesin, 10) || 0;
     var statusAkun = String(payload.status || 'Aktif').trim();
-    var newPassword = String(payload.password || '').trim();
-
-    if (!userId || !nama || !noHp) {
-      return { status: 'error', message: 'User ID, Nama Lengkap, dan No HP wajib disertakan!' };
-    }
 
     var fseSheet = findOrCreateFSESheet(ss);
     var userSheet = findOrCreateUsersSheet(ss);
 
-    // 1. Perbarui pada sheet FSE
-    var fLastRow = fseSheet.getLastRow();
-    if (fLastRow > 1) {
-      var fData = fseSheet.getRange(2, 1, fLastRow - 1, fseSheet.getLastColumn()).getDisplayValues();
+    if (fseSheet && fseSheet.getLastRow() > 1) {
+      var fData = fseSheet.getRange(2, 1, fseSheet.getLastRow() - 1, 1).getDisplayValues();
       for (var fi = 0; fi < fData.length; fi++) {
         if (String(fData[fi][0]).trim() === userId) {
-          var targetRow = fi + 2;
-          fseSheet.getRange(targetRow, 2).setValue(nama);
-          fseSheet.getRange(targetRow, 3).setValue(noHp);
-          if (newPassword) fseSheet.getRange(targetRow, 4).setValue(newPassword);
-          fseSheet.getRange(targetRow, 6).setValue(wilayah);
-          fseSheet.getRange(targetRow, 7).setValue(statusAkun);
-          fseSheet.getRange(targetRow, 8).setValue(kelolaanMesin);
+          var tRow = fi + 2;
+          fseSheet.getRange(tRow, 2).setValue(nama);
+          fseSheet.getRange(tRow, 3).setValue(noHp);
+          fseSheet.getRange(tRow, 6).setValue(wilayah);
+          fseSheet.getRange(tRow, 7).setValue(statusAkun);
+          fseSheet.getRange(tRow, 8).setValue(kelolaanMesin);
           break;
         }
       }
     }
 
-    // 2. Perbarui pada sheet Users
-    var uLastRow = userSheet.getLastRow();
-    if (uLastRow > 1) {
-      var uData = userSheet.getRange(2, 1, uLastRow - 1, userSheet.getLastColumn()).getDisplayValues();
+    if (userSheet && userSheet.getLastRow() > 1) {
+      var uData = userSheet.getRange(2, 1, userSheet.getLastRow() - 1, 1).getDisplayValues();
       for (var ui = 0; ui < uData.length; ui++) {
         if (String(uData[ui][0]).trim() === userId) {
-          var uRow = ui + 2;
-          userSheet.getRange(uRow, 2).setValue(nama);
-          userSheet.getRange(uRow, 3).setValue(noHp);
-          if (newPassword) userSheet.getRange(uRow, 4).setValue(newPassword);
-          userSheet.getRange(uRow, 6).setValue(wilayah);
-          userSheet.getRange(uRow, 7).setValue(statusAkun);
-          break;
-        }
-      }
-    }
-
-    // 3. Perbarui pada sheet Engineers (Sinkronisasi Nama, Wilayah, HP)
-    var engSheet = findSheet(ss, ['Engineers', 'Engineer']);
-    if (engSheet && engSheet.getLastRow() > 1) {
-      var eData = engSheet.getRange(2, 1, engSheet.getLastRow() - 1, engSheet.getLastColumn()).getDisplayValues();
-      for (var ei = 0; ei < eData.length; ei++) {
-        if (String(eData[ei][0]).trim() === userId || String(eData[ei][1]).trim().toLowerCase() === nama.toLowerCase()) {
-          var eRow = ei + 2;
-          engSheet.getRange(eRow, 2).setValue(nama);
-          engSheet.getRange(eRow, 3).setValue(wilayah);
-          engSheet.getRange(eRow, 4).setValue(noHp);
-          engSheet.getRange(eRow, 5).setValue(statusAkun);
+          var targetURow = ui + 2;
+          userSheet.getRange(targetURow, 2).setValue(nama);
+          userSheet.getRange(targetURow, 3).setValue(noHp);
+          userSheet.getRange(targetURow, 6).setValue(wilayah);
+          userSheet.getRange(targetURow, 7).setValue(statusAkun);
           break;
         }
       }
     }
 
     SpreadsheetApp.flush();
-
-    return {
-      status: 'success',
-      message: 'Data FSE [' + nama + '] (' + userId + ') berhasil diperbarui!',
-      fse: {
-        userId: userId,
-        nama: nama,
-        noHp: noHp,
-        wilayah: wilayah,
-        status: statusAkun,
-        jumlahMesin: kelolaanMesin
-      }
-    };
+    return { status: 'success', message: 'Data FSE [' + nama + '] berhasil diperbarui!' };
   } catch (err) {
     return { status: 'error', message: err.toString() };
   }
 }
 
-/**
- * Nonaktifkan / Ubah Status FSE (Soft Delete)
- */
 function toggleFSEStatus(userId, currentStatus, currentMonitoringUser) {
   try {
     var newStatus = (currentStatus === 'Aktif') ? 'Nonaktif' : 'Aktif';
     var ss = getSpreadsheet();
-    if (!ss) return { status: 'error', message: 'Spreadsheet tidak ditemukan' };
-
-    var editorRole = (currentMonitoringUser && currentMonitoringUser.roleKey) ? currentMonitoringUser.roleKey.toLowerCase() : '';
-    if (editorRole !== 'monitoring' && editorRole !== 'admin') {
-      return { status: 'error', message: 'Hanya Role Monitoring (atau Admin) yang berhak mengubah status akun FSE!' };
-    }
 
     var fseSheet = findOrCreateFSESheet(ss);
     var userSheet = findOrCreateUsersSheet(ss);
@@ -423,12 +316,7 @@ function toggleFSEStatus(userId, currentStatus, currentMonitoringUser) {
     }
 
     SpreadsheetApp.flush();
-
-    return {
-      status: 'success',
-      message: 'Status akun ' + userId + ' berhasil diubah menjadi ' + newStatus,
-      newStatus: newStatus
-    };
+    return { status: 'success', message: 'Status akun ' + userId + ' diubah ke ' + newStatus, newStatus: newStatus };
   } catch (err) {
     return { status: 'error', message: err.toString() };
   }

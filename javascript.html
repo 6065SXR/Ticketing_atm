@@ -278,7 +278,7 @@
       activeBtn.classList.remove('text-slate-400');
     }
 
-    if (tabName === 'tickets' || tabName === 'documents' || tabName === 'database') {
+    if (tabName === 'tickets' || tabName === 'documents' || tabName === 'database' || tabName === 'dashboard') {
       loadFSEPortalData();
     }
   }
@@ -357,147 +357,199 @@
 
   function renderFSETickets(tickets) {
     window._cachedFSETickets = tickets;
-    var container = document.getElementById('fse-ticket-cards-container');
-    var badgeCount = document.getElementById('fse-ticket-count-badge');
-    if (!container) return;
+    var assignedContainer = document.getElementById('fse-assigned-incoming-container');
+    var assignedCountBadge = document.getElementById('fse-assigned-badge-count');
+    var activeTicketsContainer = document.getElementById('fse-ticket-cards-container');
+    var tabBadgeCount = document.getElementById('fse-ticket-count-badge');
 
-    if (!tickets || tickets.length === 0) {
-      if (badgeCount) badgeCount.classList.add('hidden');
-      container.innerHTML = '<div class="text-center py-10 text-slate-400 text-xs"><i class="fa-solid fa-circle-check text-emerald-500 text-3xl mb-2 block"></i>Semua tiket penugasan Anda telah selesai dikerjakan!</div>';
-      return;
-    }
+    var newAssignedTickets = [];
+    var inProgressTickets = [];
 
-    if (badgeCount) badgeCount.classList.remove('hidden');
-
-    var html = '';
     for (var i = 0; i < tickets.length; i++) {
-      var t = tickets[i];
-      var st = t.statusTiket || 'Open';
-      var stLower = st.toLowerCase();
-      var badge = getStatusBadgeHtml(st);
-
-      // Ambil lokasi mesin ATM dari cache mesin
-      var machineLoc = '-';
-      if (cachedDropdowns && cachedDropdowns.machines) {
-        var mMatch = cachedDropdowns.machines.find(function(m) {
-          return m.idMesin === t.idMesin || m.serialNumber === t.serialNumber;
-        });
-        if (mMatch && mMatch.lokasi) machineLoc = mMatch.lokasi;
-      }
-      if (machineLoc === '-' && cachedFSEMachinesList) {
-        var mMatch2 = cachedFSEMachinesList.find(function(m) {
-          return m.idMesin === t.idMesin || m.serialNumber === t.serialNumber;
-        });
-        if (mMatch2 && mMatch2.lokasi) machineLoc = mMatch2.lokasi;
-      }
-
-      var pureNote = t.noteDispatcher || t.note || '-';
-      if (pureNote.indexOf(' | [') !== -1) {
-        pureNote = pureNote.split(' | [')[0].trim();
-      }
-
-      html += '<div class="soft-card-panel p-3.5 space-y-2.5 bg-white/90 border border-white shadow-sm">';
-      
-      html += '<div class="flex items-center justify-between pb-2 border-b border-slate-100">';
-      html += '<span class="font-mono font-bold text-xs text-teal-800">' + escapeHtml(t.idTiket) + '</span>';
-      html += badge;
-      html += '</div>';
-
-      /* Format Card FSE:
-         Bank :
-         SN Mesin :
-         ID Mesin :
-         Lokasi : (Tepat di bawah ID Mesin)
-         Time Open :
-         Problem :
-         vendor/PIC :
-         Dispatcher :
-         Note :
-      */
-      html += '<div class="space-y-1 text-xs">';
-      html += '<div class="flex"><span class="w-32 text-slate-500 shrink-0 font-medium">Bank :</span><span class="font-bold text-slate-800 truncate">' + escapeHtml(t.bank) + '</span></div>';
-      html += '<div class="flex"><span class="w-32 text-slate-500 shrink-0 font-medium">SN Mesin :</span><span class="font-mono font-semibold text-slate-800">' + escapeHtml(t.serialNumber) + '</span></div>';
-      html += '<div class="flex"><span class="w-32 text-slate-500 shrink-0 font-medium">ID Mesin :</span><span class="font-mono font-bold text-teal-800">' + escapeHtml(t.idMesin) + '</span></div>';
-      html += '<div class="flex"><span class="w-32 text-slate-500 shrink-0 font-medium text-teal-700">Lokasi :</span><span class="text-slate-700 font-medium">' + escapeHtml(machineLoc) + '</span></div>';
-      html += '<div class="flex"><span class="w-32 text-slate-500 shrink-0 font-medium">Time Open :</span><span class="font-mono text-slate-700">' + escapeHtml(t.tanggalTiket) + ' ' + escapeHtml(t.jamTiket) + ' WIB</span></div>';
-      html += '<div class="flex"><span class="w-32 text-slate-500 shrink-0 font-medium">Problem :</span><span class="font-semibold text-rose-700">' + escapeHtml(t.problem) + '</span></div>';
-      html += '<div class="flex"><span class="w-32 text-slate-500 shrink-0 font-medium">vendor/PIC :</span><span class="text-slate-700 font-medium">' + escapeHtml(t.picBank || '-') + '</span></div>';
-      html += '<div class="flex"><span class="w-32 text-slate-500 shrink-0 font-medium">Dispatcher :</span><span class="text-teal-700 font-semibold">' + escapeHtml(t.dispatcher || 'Monitoring') + '</span></div>';
-      html += '<div class="flex"><span class="w-32 text-slate-500 shrink-0 font-medium">Note :</span><span class="text-slate-600 italic">' + escapeHtml(pureNote) + '</span></div>';
-      
-      if (t.alasanPending) {
-        html += '<div class="flex flex-col pt-1.5 border-t border-dashed border-amber-200 mt-1">';
-        html += '<div class="flex items-center justify-between">';
-        html += '<span class="text-amber-700 font-semibold"><i class="fa-solid fa-pause text-[10px] mr-1"></i>Status Pending :</span>';
-        if (t.fotoPendingEvidence) {
-          html += '<button type="button" onclick="viewImageModal(\'' + escapeHtml(t.fotoPendingEvidence) + '\', \'Bukti Lokasi Tutup - ' + escapeHtml(t.idTiket) + '\')" class="px-2 py-0.5 rounded-lg bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-bold hover:bg-amber-200 transition flex items-center gap-1"><i class="fa-solid fa-image"></i> Lihat Foto</button>';
-        }
-        html += '</div>';
-        html += '<span class="text-amber-800 text-[11px] font-medium">' + escapeHtml(t.alasanPending) + ' (Lanjutan: ' + escapeHtml(t.jadwalLanjutanPending || '-') + ')</span>';
-        html += '</div>';
-      }
-
-      if (t.fotoFeReport && (stLower === 'solving' || stLower === 'solved')) {
-        html += '<div class="pt-1.5 flex justify-end">';
-        html += '<button type="button" onclick="viewImageModal(\'' + escapeHtml(t.fotoFeReport) + '\', \'Foto FE Report - ' + escapeHtml(t.idTiket) + '\')" class="px-2.5 py-1 rounded-lg bg-teal-50 hover:bg-teal-100 text-teal-700 border border-teal-200 font-bold text-[11px] flex items-center gap-1.5 shadow-sm"><i class="fa-solid fa-file-image"></i> Lihat Foto FE Report</button>';
-        html += '</div>';
-      }
-
-      html += '</div>';
-
-      html += '<div class="pt-2 border-t border-slate-100 flex items-center gap-2">';
-      html += '<button onclick="openFSETimelineModal(\'' + escapeHtml(t.idTiket) + '\')" class="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-[11px] font-semibold flex items-center gap-1 shadow-sm"><i class="fa-solid fa-clock-rotate-left"></i> Riwayat</button>';
-
-      if (stLower === 'solving' || stLower === 'solved') {
-        html += '<div class="flex-1 text-center py-1.5 px-2 bg-emerald-50 text-emerald-800 rounded-xl text-[11px] font-semibold border border-emerald-200"><i class="fa-solid fa-lock mr-1"></i> Tiket Terkunci (Solved)</div>';
-      } else if (stLower === 'cancel') {
-        html += '<div class="flex-1 text-center py-1.5 px-2 bg-rose-50 text-rose-700 rounded-xl text-[11px] font-semibold border border-rose-200"><i class="fa-solid fa-ban mr-1"></i> Dibatalkan</div>';
+      var stLower = String(tickets[i].statusTiket || '').toLowerCase().trim();
+      if (stLower === 'assign' || stLower === 'open' || stLower === 'baru') {
+        newAssignedTickets.push(tickets[i]);
       } else {
-        html += '<select onchange="handleFSEDropdownAction(\'' + escapeHtml(t.idTiket) + '\', this)" class="flex-1 bg-white border border-teal-500 text-teal-700 py-1.5 px-2 rounded-xl text-[11px] font-semibold outline-none focus:ring-2 focus:ring-teal-200 shadow-sm">';
-        html += '<option value="">-- Update Status --</option>';
-        
-        if (stLower === 'open' || stLower === 'baru') {
-          html += '<option value="Respon">Respon Tiket</option>';
-          html += '<option value="Cancel">Cancel</option>';
-        } else if (stLower === 'respon') {
-          html += '<option value="Appointment">Appointment</option>';
-          html += '<option value="Cancel">Cancel</option>';
-        } else if (stLower === 'appointment' || stLower === 're-appointment') {
-          html += '<option value="Arrival">Arrival (Tiba di Lokasi)</option>';
-          html += '<option value="Cancel">Cancel</option>';
-        } else if (stLower === 'arrival') {
-          html += '<option value="Handling">Handling (Mulai Pengerjaan)</option>';
-          html += '<option value="Cancel">Cancel</option>';
-        } else if (stLower === 'handling' || stLower === 'take a part') {
-          html += '<option value="Waiting Vendor">Waiting Vendor</option>';
-          html += '<option value="Pending">Pending</option>';
-          html += '<option value="Re-Appointment">Re-Appointment (Ambil Part)</option>';
-          html += '<option value="Solved">Solved (Penyelesaian)</option>';
-          html += '<option value="Cancel">Cancel</option>';
-        } else if (stLower === 'waiting vendor') {
-          html += '<option value="Handling">Lanjut Handling</option>';
-          html += '<option value="Pending">Pending</option>';
-          html += '<option value="Solved">Solved (Penyelesaian)</option>';
-        } else if (stLower === 'pending') {
-          html += '<option value="Re-Appointment">Re-Appointment</option>';
-          html += '<option value="Handling">Handling</option>';
-          html += '<option value="Solved">Solved (Penyelesaian)</option>';
-          html += '<option value="Cancel">Cancel</option>';
-        }
-        html += '</select>';
+        inProgressTickets.push(tickets[i]);
       }
-
-      html += '</div>';
-      html += '</div>';
     }
 
-    container.innerHTML = html;
+    // 1. Render Tiket Berstatus "Assign" di DASHBOARD FSE
+    if (assignedCountBadge) {
+      assignedCountBadge.innerText = newAssignedTickets.length + ' Baru';
+      if (newAssignedTickets.length > 0) {
+        assignedCountBadge.className = 'px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-300 animate-pulse';
+      } else {
+        assignedCountBadge.className = 'px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-600 border border-slate-200';
+      }
+    }
+
+    if (assignedContainer) {
+      if (newAssignedTickets.length === 0) {
+        assignedContainer.innerHTML = '<div class="text-center py-6 text-slate-400 text-xs bg-white/60 rounded-2xl border border-slate-200/80"><i class="fa-solid fa-circle-check text-teal-600 text-xl mb-1 block"></i>Tidak ada tiket baru yang menunggu respon Anda.</div>';
+      } else {
+        var aHtml = '';
+        for (var a = 0; a < newAssignedTickets.length; a++) {
+          var at = newAssignedTickets[a];
+          var aLoc = getMachineLocation(at.idMesin, at.serialNumber);
+
+          aHtml += '<div class="soft-card-panel p-3.5 space-y-2.5 bg-gradient-to-br from-white to-amber-50/40 border border-amber-200/80 shadow-md relative">';
+          aHtml += '<div class="flex items-center justify-between pb-2 border-b border-amber-100">';
+          aHtml += '<div class="flex items-center gap-1.5">';
+          aHtml += '<span class="font-mono font-bold text-xs text-teal-800">' + escapeHtml(at.idTiket) + '</span>';
+          aHtml += '<span class="px-2 py-0.5 rounded-full text-[9px] font-bold bg-amber-500 text-white animate-pulse">Perlu Respon</span>';
+          aHtml += '</div>';
+          aHtml += '<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-300">Assign</span>';
+          aHtml += '</div>';
+
+          aHtml += '<div class="space-y-1 text-xs">';
+          aHtml += '<div class="flex"><span class="w-28 text-slate-500 shrink-0 font-medium">Bank :</span><span class="font-bold text-slate-800 truncate">' + escapeHtml(at.bank) + '</span></div>';
+          aHtml += '<div class="flex"><span class="w-28 text-slate-500 shrink-0 font-medium">SN Mesin :</span><span class="font-mono font-semibold text-slate-800">' + escapeHtml(at.serialNumber) + '</span></div>';
+          aHtml += '<div class="flex"><span class="w-28 text-slate-500 shrink-0 font-medium">ID Mesin :</span><span class="font-mono font-bold text-teal-800">' + escapeHtml(at.idMesin) + '</span></div>';
+          aHtml += '<div class="flex"><span class="w-28 text-slate-500 shrink-0 font-medium text-teal-700">Lokasi :</span><span class="text-slate-700 font-medium">' + escapeHtml(aLoc) + '</span></div>';
+          aHtml += '<div class="flex"><span class="w-28 text-slate-500 shrink-0 font-medium">Problem :</span><span class="font-semibold text-rose-700">' + escapeHtml(at.problem) + '</span></div>';
+          aHtml += '<div class="flex"><span class="w-28 text-slate-500 shrink-0 font-medium">Time Open :</span><span class="font-mono text-slate-600 text-[11px]">' + escapeHtml(at.tanggalTiket) + ' ' + escapeHtml(at.jamTiket) + ' WIB</span></div>';
+          aHtml += '</div>';
+
+          aHtml += '<div class="pt-2 border-t border-amber-100 flex items-center gap-2">';
+          aHtml += '<button onclick="openFSETimelineModal(\'' + escapeHtml(at.idTiket) + '\')" class="px-2.5 py-1.5 bg-white hover:bg-slate-100 text-slate-700 rounded-xl text-[11px] font-semibold flex items-center gap-1 border border-slate-200 shadow-sm"><i class="fa-solid fa-clock-rotate-left"></i> Riwayat</button>';
+          aHtml += '<button onclick="executeTicketAction(\'' + escapeHtml(at.idTiket) + '\', \'Respon\', { note: \'Tiket direspon oleh teknisi FSE\' })" class="flex-1 py-1.5 px-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-md transition flex items-center justify-center gap-1.5"><i class="fa-solid fa-check"></i> Respon Tiket</button>';
+          aHtml += '<button onclick="handleFSEDropdownAction(\'' + escapeHtml(at.idTiket) + '\', { value: \'Cancel\' })" class="px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-xl text-[11px] font-semibold border border-rose-200">Cancel</button>';
+          aHtml += '</div>';
+
+          aHtml += '</div>';
+        }
+        assignedContainer.innerHTML = aHtml;
+      }
+    }
+
+    // 2. Render Tiket yang Sudah Di-Respon / Dalam Pengerjaan di TAB TICKET
+    if (tabBadgeCount) {
+      if (inProgressTickets.length > 0) tabBadgeCount.classList.remove('hidden');
+      else tabBadgeCount.classList.add('hidden');
+    }
+
+    if (activeTicketsContainer) {
+      if (inProgressTickets.length === 0) {
+        activeTicketsContainer.innerHTML = '<div class="text-center py-10 text-slate-400 text-xs"><i class="fa-solid fa-circle-check text-emerald-500 text-3xl mb-2 block"></i>Semua tiket penugasan Anda telah selesai dikerjakan!</div>';
+        return;
+      }
+
+      var html = '';
+      for (var j = 0; j < inProgressTickets.length; j++) {
+        var t = inProgressTickets[j];
+        var st = t.statusTiket || 'Respon';
+        var sLower = st.toLowerCase();
+        var badge = getStatusBadgeHtml(st);
+        var machineLoc = getMachineLocation(t.idMesin, t.serialNumber);
+
+        var pureNote = t.noteDispatcher || t.note || '-';
+        if (pureNote.indexOf(' | [') !== -1) {
+          pureNote = pureNote.split(' | [')[0].trim();
+        }
+
+        html += '<div class="soft-card-panel p-3.5 space-y-2.5 bg-white/90 border border-white shadow-sm">';
+        html += '<div class="flex items-center justify-between pb-2 border-b border-slate-100">';
+        html += '<span class="font-mono font-bold text-xs text-teal-800">' + escapeHtml(t.idTiket) + '</span>';
+        html += badge;
+        html += '</div>';
+
+        html += '<div class="space-y-1 text-xs">';
+        html += '<div class="flex"><span class="w-32 text-slate-500 shrink-0 font-medium">Bank :</span><span class="font-bold text-slate-800 truncate">' + escapeHtml(t.bank) + '</span></div>';
+        html += '<div class="flex"><span class="w-32 text-slate-500 shrink-0 font-medium">SN Mesin :</span><span class="font-mono font-semibold text-slate-800">' + escapeHtml(t.serialNumber) + '</span></div>';
+        html += '<div class="flex"><span class="w-32 text-slate-500 shrink-0 font-medium">ID Mesin :</span><span class="font-mono font-bold text-teal-800">' + escapeHtml(t.idMesin) + '</span></div>';
+        html += '<div class="flex"><span class="w-32 text-slate-500 shrink-0 font-medium text-teal-700">Lokasi :</span><span class="text-slate-700 font-medium">' + escapeHtml(machineLoc) + '</span></div>';
+        html += '<div class="flex"><span class="w-32 text-slate-500 shrink-0 font-medium">Time Open :</span><span class="font-mono text-slate-700">' + escapeHtml(t.tanggalTiket) + ' ' + escapeHtml(t.jamTiket) + ' WIB</span></div>';
+        html += '<div class="flex"><span class="w-32 text-slate-500 shrink-0 font-medium">Problem :</span><span class="font-semibold text-rose-700">' + escapeHtml(t.problem) + '</span></div>';
+        html += '<div class="flex"><span class="w-32 text-slate-500 shrink-0 font-medium">vendor/PIC :</span><span class="text-slate-700 font-medium">' + escapeHtml(t.picBank || '-') + '</span></div>';
+        html += '<div class="flex"><span class="w-32 text-slate-500 shrink-0 font-medium">Dispatcher :</span><span class="text-teal-700 font-semibold">' + escapeHtml(t.dispatcher || 'Monitoring') + '</span></div>';
+        html += '<div class="flex"><span class="w-32 text-slate-500 shrink-0 font-medium">Note :</span><span class="text-slate-600 italic">' + escapeHtml(pureNote) + '</span></div>';
+        
+        if (t.alasanPending) {
+          html += '<div class="flex flex-col pt-1.5 border-t border-dashed border-amber-200 mt-1">';
+          html += '<div class="flex items-center justify-between">';
+          html += '<span class="text-amber-700 font-semibold"><i class="fa-solid fa-pause text-[10px] mr-1"></i>Status Pending :</span>';
+          if (t.fotoPendingEvidence) {
+            html += '<button type="button" onclick="viewImageModal(\'' + escapeHtml(t.fotoPendingEvidence) + '\', \'Bukti Lokasi Tutup - ' + escapeHtml(t.idTiket) + '\')" class="px-2 py-0.5 rounded-lg bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-bold hover:bg-amber-200 transition flex items-center gap-1"><i class="fa-solid fa-image"></i> Lihat Foto</button>';
+          }
+          html += '</div>';
+          html += '<span class="text-amber-800 text-[11px] font-medium">' + escapeHtml(t.alasanPending) + ' (Lanjutan: ' + escapeHtml(t.jadwalLanjutanPending || '-') + ')</span>';
+          html += '</div>';
+        }
+
+        if (t.fotoFeReport && (sLower === 'solving' || sLower === 'solved')) {
+          html += '<div class="pt-1.5 flex justify-end">';
+          html += '<button type="button" onclick="viewImageModal(\'' + escapeHtml(t.fotoFeReport) + '\', \'Foto FE Report - ' + escapeHtml(t.idTiket) + '\')" class="px-2.5 py-1 rounded-lg bg-teal-50 hover:bg-teal-100 text-teal-700 border border-teal-200 font-bold text-[11px] flex items-center gap-1.5 shadow-sm"><i class="fa-solid fa-file-image"></i> Lihat Foto FE Report</button>';
+          html += '</div>';
+        }
+
+        html += '</div>';
+
+        html += '<div class="pt-2 border-t border-slate-100 flex items-center gap-2">';
+        html += '<button onclick="openFSETimelineModal(\'' + escapeHtml(t.idTiket) + '\')" class="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-[11px] font-semibold flex items-center gap-1 shadow-sm"><i class="fa-solid fa-clock-rotate-left"></i> Riwayat</button>';
+
+        if (sLower === 'solving' || sLower === 'solved') {
+          html += '<div class="flex-1 text-center py-1.5 px-2 bg-emerald-50 text-emerald-800 rounded-xl text-[11px] font-semibold border border-emerald-200"><i class="fa-solid fa-lock mr-1"></i> Tiket Terkunci (Solved)</div>';
+        } else {
+          html += '<select onchange="handleFSEDropdownAction(\'' + escapeHtml(t.idTiket) + '\', this)" class="flex-1 bg-white border border-teal-500 text-teal-700 py-1.5 px-2 rounded-xl text-[11px] font-semibold outline-none focus:ring-2 focus:ring-teal-200 shadow-sm">';
+          html += '<option value="">-- Update Status --</option>';
+          
+          if (sLower === 'respon') {
+            html += '<option value="Appointment">Appointment</option>';
+            html += '<option value="Arrival">Arrival (Tiba di Lokasi)</option>';
+            html += '<option value="Cancel">Cancel</option>';
+          } else if (sLower === 'appointment' || sLower === 're-appointment') {
+            html += '<option value="Arrival">Arrival (Tiba di Lokasi)</option>';
+            html += '<option value="Cancel">Cancel</option>';
+          } else if (sLower === 'arrival') {
+            html += '<option value="Handling">Handling (Mulai Pengerjaan)</option>';
+            html += '<option value="Cancel">Cancel</option>';
+          } else if (sLower === 'handling' || sLower === 'take a part') {
+            html += '<option value="Waiting Vendor">Waiting Vendor</option>';
+            html += '<option value="Pending">Pending</option>';
+            html += '<option value="Re-Appointment">Re-Appointment (Ambil Part)</option>';
+            html += '<option value="Solved">Solved (Penyelesaian)</option>';
+            html += '<option value="Cancel">Cancel</option>';
+          } else if (sLower === 'waiting vendor') {
+            html += '<option value="Handling">Lanjut Handling</option>';
+            html += '<option value="Pending">Pending</option>';
+            html += '<option value="Solved">Solved (Penyelesaian)</option>';
+          } else if (sLower === 'pending') {
+            html += '<option value="Re-Appointment">Re-Appointment</option>';
+            html += '<option value="Handling">Handling</option>';
+            html += '<option value="Solved">Solved (Penyelesaian)</option>';
+            html += '<option value="Cancel">Cancel</option>';
+          }
+          html += '</select>';
+        }
+
+        html += '</div>';
+        html += '</div>';
+      }
+      activeTicketsContainer.innerHTML = html;
+    }
+  }
+
+  function getMachineLocation(idMesin, serialNumber) {
+    if (cachedDropdowns && cachedDropdowns.machines) {
+      var mm = cachedDropdowns.machines.find(function(m) {
+        return m.idMesin === idMesin || m.serialNumber === serialNumber;
+      });
+      if (mm && mm.lokasi) return mm.lokasi;
+    }
+    if (cachedFSEMachinesList) {
+      var mm2 = cachedFSEMachinesList.find(function(m) {
+        return m.idMesin === idMesin || m.serialNumber === serialNumber;
+      });
+      if (mm2 && mm2.lokasi) return mm2.lokasi;
+    }
+    return '-';
   }
 
   function handleFSEDropdownAction(ticketId, selectEl) {
     var action = selectEl.value;
     if (!action) return;
-    selectEl.value = "";
+    if (selectEl.tagName === 'SELECT') selectEl.value = "";
     activeActionTicketId = ticketId;
 
     var now = new Date();
@@ -789,6 +841,9 @@
     if (!targetTicket && window._cachedClosedDocuments) {
       targetTicket = window._cachedClosedDocuments.find(function(t){ return t.idTiket === ticketId; });
     }
+    if (!targetTicket && window._cachedHistoryDocuments) {
+      targetTicket = window._cachedHistoryDocuments.find(function(t){ return t.idTiket === ticketId; });
+    }
     if (!targetTicket && currentTicketsList) {
       targetTicket = currentTicketsList.find(function(t){ return t.idTiket === ticketId; });
     }
@@ -880,53 +935,43 @@
     var docBadge = document.getElementById('fse-doc-alert-badge');
     if (!container) return;
 
-    if (!documents || documents.length === 0) {
+    // Filter dokumen untuk menu Kirim Dokumen: Khusus tiket Closed
+    var closedDocsOnly = (documents || []).filter(function(d) {
+      var st = String(d.statusTiket || '').toLowerCase();
+      return st === 'closed';
+    });
+
+    if (!closedDocsOnly || closedDocsOnly.length === 0) {
       if (docBadge) docBadge.classList.add('hidden');
       container.innerHTML = '<div class="text-center py-10 text-slate-400 text-xs"><i class="fa-solid fa-folder-open text-3xl mb-2 block text-slate-300"></i>Tidak ada dokumen hardcopy yang menunggu pengiriman.</div>';
       updateBatchSendButtonState();
       return;
     }
 
-    var isJabodetabek = (wilayahFSE && wilayahFSE.toLowerCase().indexOf('jabo') !== -1) ||
-                        (wilayahFSE && wilayahFSE.toLowerCase().indexOf('jakarta') !== -1) ||
-                        (wilayahFSE && wilayahFSE.toLowerCase().indexOf('bekasi') !== -1) ||
-                        (wilayahFSE && wilayahFSE.toLowerCase().indexOf('depok') !== -1) ||
-                        (wilayahFSE && wilayahFSE.toLowerCase().indexOf('bogor') !== -1) ||
-                        (wilayahFSE && wilayahFSE.toLowerCase().indexOf('tangerang') !== -1);
-    var maxDays = isJabodetabek ? 3 : 7;
+    // SLA Deploy: Maksimal 3 Menit (3 * 60 * 1000 ms), ubah ke 3 * 24 * 60 * 60 * 1000 untuk 3 hari mode produksi
+    var SLA_DEPLOY_LIMIT_MS = 3 * 60 * 1000; 
     var pendingCount = 0;
     var html = '';
 
-    for (var i = 0; i < documents.length; i++) {
-      var doc = documents[i];
-      var isReceived = (doc.hardcopyStatus && doc.hardcopyStatus.toLowerCase() === 'diterima');
-      var isSent = (doc.hardcopyStatus && doc.hardcopyStatus.toLowerCase().indexOf('kirim') !== -1 && !isReceived);
-      
+    for (var i = 0; i < closedDocsOnly.length; i++) {
+      var doc = closedDocsOnly[i];
+      var rawHc = String(doc.hardcopyStatus || 'Belum Dikirim').trim().toLowerCase();
+      var isReceived = (rawHc === 'diterima');
+      var isSent = (rawHc === 'sedang dikirim' || rawHc.indexOf('sedang') !== -1 || (doc.noResi && doc.noResi !== '-' && doc.noResi !== ''));
+
       if (!isReceived) pendingCount++;
 
-      var daysDiff = 0;
+      var elapsedMs = 0;
       if (doc.closedAt) {
         var closedTime = new Date(doc.closedAt.replace(/-/g, '/')).getTime();
-        daysDiff = Math.floor((Date.now() - closedTime) / (1000 * 60 * 60 * 24));
+        if (!isNaN(closedTime)) {
+          elapsedMs = Date.now() - closedTime;
+        }
       }
-      var remainingDays = maxDays - daysDiff;
+      var isOverdue = (elapsedMs > SLA_DEPLOY_LIMIT_MS);
 
-      // Ambil lokasi mesin ATM
-      var docLokasi = '-';
-      if (cachedDropdowns && cachedDropdowns.machines) {
-        var mm = cachedDropdowns.machines.find(function(m) {
-          return m.idMesin === doc.idMesin || m.serialNumber === doc.serialNumber;
-        });
-        if (mm && mm.lokasi) docLokasi = mm.lokasi;
-      }
-      if (docLokasi === '-' && cachedFSEMachinesList) {
-        var mm2 = cachedFSEMachinesList.find(function(m) {
-          return m.idMesin === doc.idMesin || m.serialNumber === doc.serialNumber;
-        });
-        if (mm2 && mm2.lokasi) docLokasi = mm2.lokasi;
-      }
+      var docLokasi = getMachineLocation(doc.idMesin, doc.serialNumber);
 
-      // Pastikan No. FE Report tampil akurat dengan fallback ekstraksi
       var noFeDisplay = String(doc.noFeReport || '').trim();
       if (!noFeDisplay || noFeDisplay === '-') {
         if (doc.note && doc.note.indexOf('[No. FE:') !== -1) {
@@ -962,15 +1007,21 @@
       html += '<span class="font-mono font-bold text-xs text-teal-800">' + escapeHtml(doc.idTiket) + '</span>';
       html += '</div>';
 
+      /* LOGIKA BADGE STATUS PENGIRIMAN:
+         - Diterima Kantor: Hijau
+         - Sedang Dikirim: Biru (Kurir / No Resi)
+         - Belum Dikirim & Overdue (> 3 Menit): Merah Berkedip dengan Warning Icon
+         - Belum Dikirim & Normal (<= 3 Menit): Oranye "Dokumen belum dikirim"
+      */
       if (isReceived) {
         html += '<span class="px-2 py-0.5 rounded-full text-[10px] bg-emerald-50 text-emerald-700 border border-emerald-200 font-bold"><i class="fa-solid fa-check-double mr-1"></i>Diterima Kantor</span>';
       } else if (isSent) {
         var sentTag = (doc.namaEkspedisi && doc.namaEkspedisi !== '-') ? (doc.namaEkspedisi + ' - ' + (doc.noResi || 'Resi Ada')) : 'Sedang Dikirim';
-        html += '<span class="px-2 py-0.5 rounded-full text-[10px] bg-sky-50 text-sky-700 border border-sky-200 font-bold truncate max-w-[150px]"><i class="fa-solid fa-truck-fast mr-1"></i>' + escapeHtml(sentTag) + '</span>';
-      } else if (remainingDays < 0) {
-        html += '<span class="px-2 py-0.5 rounded-full text-[10px] bg-rose-100 text-rose-700 border border-rose-300 font-bold animate-pulse"><i class="fa-solid fa-triangle-exclamation mr-1"></i>TERLAMBAT (' + Math.abs(remainingDays) + ' hr)</span>';
+        html += '<span class="px-2 py-0.5 rounded-full text-[10px] bg-sky-50 text-sky-700 border border-sky-200 font-bold truncate max-w-[160px]"><i class="fa-solid fa-truck-fast mr-1"></i>' + escapeHtml(sentTag) + '</span>';
+      } else if (isOverdue) {
+        html += '<span class="px-2 py-0.5 rounded-full text-[10px] bg-rose-50 text-rose-700 border border-rose-300 font-bold flex items-center gap-1 animate-pulse"><i class="fa-solid fa-triangle-exclamation text-rose-600"></i> Dokumen belum dikirim</span>';
       } else {
-        html += '<span class="px-2 py-0.5 rounded-full text-[10px] bg-amber-50 text-amber-700 border border-amber-200 font-bold">Sisa ' + remainingDays + ' Hari</span>';
+        html += '<span class="px-2 py-0.5 rounded-full text-[10px] bg-amber-50 text-amber-800 border border-amber-300 font-bold flex items-center gap-1">Dokumen belum dikirim</span>';
       }
       html += '</div>';
 
@@ -1007,6 +1058,154 @@
     updateBatchSendButtonState();
   }
 
+  function openFSETicketHistoryModal() {
+    var modal = document.getElementById('modal-fse-ticket-history');
+    if (!modal) return;
+
+    var sInput = document.getElementById('filter-history-ticket-search');
+    var cBtn = document.getElementById('btn-clear-history-search');
+    if (sInput) sInput.value = '';
+    if (cBtn) cBtn.classList.add('hidden');
+
+    modal.classList.remove('hidden');
+    renderFSETicketHistory(window._cachedClosedDocuments || []);
+  }
+
+  function closeFSETicketHistoryModal() {
+    var modal = document.getElementById('modal-fse-ticket-history');
+    if (modal) modal.classList.add('hidden');
+  }
+
+  function filterFSETicketHistory() {
+    var q = (document.getElementById('filter-history-ticket-search').value || '').toLowerCase().trim();
+    var clearBtn = document.getElementById('btn-clear-history-search');
+
+    if (clearBtn) {
+      if (q !== '') clearBtn.classList.remove('hidden');
+      else clearBtn.classList.add('hidden');
+    }
+
+    var allDocs = window._cachedHistoryDocuments || window._cachedClosedDocuments || [];
+
+    var filtered = allDocs.filter(function(doc) {
+      if (!q) return true;
+      var tId = String(doc.idTiket || '').toLowerCase();
+      var sn = String(doc.serialNumber || '').toLowerCase();
+      var mId = String(doc.idMesin || '').toLowerCase();
+
+      return (
+        tId.indexOf(q) !== -1 ||
+        sn.indexOf(q) !== -1 ||
+        mId.indexOf(q) !== -1
+      );
+    });
+
+    renderFSETicketHistoryDOM(filtered);
+  }
+
+  function clearFSETicketHistorySearch() {
+    var sInput = document.getElementById('filter-history-ticket-search');
+    var clearBtn = document.getElementById('btn-clear-history-search');
+    if (sInput) sInput.value = '';
+    if (clearBtn) clearBtn.classList.add('hidden');
+    renderFSETicketHistoryDOM(window._cachedHistoryDocuments || window._cachedClosedDocuments || []);
+  }
+
+  function renderFSETicketHistory(documents) {
+    window._cachedHistoryDocuments = documents;
+    renderFSETicketHistoryDOM(documents);
+  }
+
+  function renderFSETicketHistoryDOM(documents) {
+    var container = document.getElementById('fse-ticket-history-cards-container');
+    if (!container) return;
+
+    if (!documents || documents.length === 0) {
+      container.innerHTML = '<div class="text-center py-10 text-slate-400 text-xs"><i class="fa-solid fa-box-archive text-3xl mb-2 block text-slate-300"></i>Tidak ada riwayat tiket yang cocok.</div>';
+      return;
+    }
+
+    var html = '';
+    for (var i = 0; i < documents.length; i++) {
+      var doc = documents[i];
+      var stLower = String(doc.statusTiket || 'Closed').toLowerCase();
+      var isCancel = (stLower === 'cancel' || stLower === 'batal');
+
+      var docLokasi = getMachineLocation(doc.idMesin, doc.serialNumber);
+
+      var noFeDisplay = String(doc.noFeReport || '').trim();
+      if (!noFeDisplay || noFeDisplay === '-') {
+        if (doc.note && doc.note.indexOf('[No. FE:') !== -1) {
+          var matchFe = doc.note.match(/\[No\.\s*FE:\s*(.*?)\]/i);
+          if (matchFe) noFeDisplay = matchFe[1].trim();
+        }
+      }
+      if (!noFeDisplay) noFeDisplay = '-';
+
+      // Badge Tipe Tiket Shorthand
+      var rawTipe = String(doc.tipeTiket || 'CM').toLowerCase();
+      var shorthandTipe = 'CM';
+      var tipeBadgeClass = 'bg-rose-50 text-rose-700 border-rose-200';
+
+      if (rawTipe.indexOf('preventive') !== -1 || rawTipe === 'pm') {
+        shorthandTipe = 'PM';
+        tipeBadgeClass = 'bg-emerald-50 text-emerald-700 border-emerald-200';
+      } else if (rawTipe.indexOf('uat') !== -1 || rawTipe.indexOf('project') !== -1) {
+        shorthandTipe = 'UAT/Project';
+        tipeBadgeClass = 'bg-indigo-50 text-indigo-700 border-indigo-200';
+      } else if (rawTipe.indexOf('activation') !== -1) {
+        shorthandTipe = 'Activation';
+        tipeBadgeClass = 'bg-sky-50 text-sky-700 border-sky-200';
+      }
+
+      html += '<div class="soft-card-panel p-3.5 space-y-2 bg-white/90 border border-slate-200/80 shadow-sm">';
+      
+      html += '<div class="flex items-center justify-between pb-1.5 border-b border-slate-100">';
+      html += '<div class="flex items-center gap-1.5">';
+      html += '<span class="font-mono font-bold text-xs text-teal-800">' + escapeHtml(doc.idTiket) + '</span>';
+      html += '<span class="px-2 py-0.5 rounded-md font-bold text-[10px] border ' + tipeBadgeClass + '">' + shorthandTipe + '</span>';
+      html += '</div>';
+
+      if (isCancel) {
+        html += '<span class="px-2 py-0.5 rounded-full text-[10px] bg-rose-50 text-rose-700 border border-rose-200 font-bold"><i class="fa-solid fa-ban mr-1"></i>Cancel</span>';
+      } else {
+        html += '<span class="px-2 py-0.5 rounded-full text-[10px] bg-purple-50 text-purple-700 border border-purple-200 font-bold"><i class="fa-solid fa-lock mr-1"></i>Closed</span>';
+      }
+      html += '</div>';
+
+      /* Info Historis Murni Read-Only */
+      html += '<div class="space-y-1 text-xs">';
+      html += '<div class="flex"><span class="w-24 text-slate-500 shrink-0 font-medium">Bank :</span><span class="font-bold text-slate-800 truncate">' + escapeHtml(doc.bank) + '</span></div>';
+      html += '<div class="flex"><span class="w-24 text-slate-500 shrink-0 font-medium">Mesin (SN) :</span><span class="font-mono text-slate-700 font-semibold">' + escapeHtml(doc.serialNumber) + ' (' + escapeHtml(doc.idMesin) + ')</span></div>';
+      html += '<div class="flex"><span class="w-24 text-slate-500 shrink-0 font-medium text-teal-700">Lokasi :</span><span class="text-slate-700 font-medium">' + escapeHtml(docLokasi) + '</span></div>';
+      html += '<div class="flex"><span class="w-24 text-slate-500 shrink-0 font-medium">Problem :</span><span class="font-semibold text-rose-700 truncate">' + escapeHtml(doc.problem) + '</span></div>';
+      
+      if (isCancel) {
+        var cancelNote = doc.note || 'Dibatalkan oleh teknisi';
+        html += '<div class="flex"><span class="w-24 text-slate-500 shrink-0 font-medium">Alasan Batal :</span><span class="text-rose-800 font-medium italic truncate">' + escapeHtml(cancelNote) + '</span></div>';
+      } else {
+        html += '<div class="flex"><span class="w-24 text-slate-500 shrink-0 font-medium">No. FE Report :</span><span class="font-mono font-bold text-teal-800">' + escapeHtml(noFeDisplay) + '</span></div>';
+        html += '<div class="flex"><span class="w-24 text-slate-500 shrink-0 font-medium">Waktu Closed :</span><span class="font-mono text-slate-600 text-[11px]">' + escapeHtml(doc.closedAt || '-') + ' WIB</span></div>';
+      }
+      html += '</div>';
+
+      /* Tombol Aksi Riwayat & Foto */
+      html += '<div class="pt-2 border-t border-slate-100 flex items-center justify-between gap-2">';
+      html += '<button type="button" onclick="openFSETimelineModal(\'' + escapeHtml(doc.idTiket) + '\')" class="px-2.5 py-1 text-[11px] rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold flex items-center gap-1 shadow-sm"><i class="fa-solid fa-clock-rotate-left"></i> Riwayat Status</button>';
+      
+      if (!isCancel && doc.fotoFeReport) {
+        html += '<button type="button" onclick="viewImageModal(\'' + escapeHtml(doc.fotoFeReport) + '\', \'Foto FE Report - ' + escapeHtml(noFeDisplay) + '\')" class="px-2.5 py-1 rounded-lg bg-teal-50 hover:bg-teal-100 text-teal-700 border border-teal-200 text-[11px] font-bold flex items-center gap-1 shadow-sm"><i class="fa-solid fa-image"></i> Lihat Foto FE</button>';
+      } else if (isCancel && doc.fotoCancelEvidence) {
+        html += '<button type="button" onclick="viewImageModal(\'' + escapeHtml(doc.fotoCancelEvidence) + '\', \'Bukti Batal - ' + escapeHtml(doc.idTiket) + '\')" class="px-2.5 py-1 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-[11px] font-bold flex items-center gap-1 shadow-sm"><i class="fa-solid fa-image"></i> Lihat Bukti Batal</button>';
+      }
+      html += '</div>';
+
+      html += '</div>';
+    }
+
+    container.innerHTML = html;
+  }
+
   function toggleDocumentSelection(ticketId) {
     var idx = selectedDocumentIds.indexOf(ticketId);
     if (idx === -1) {
@@ -1023,7 +1222,8 @@
       for (var i = 0; i < window._cachedClosedDocuments.length; i++) {
         var doc = window._cachedClosedDocuments[i];
         var isReceived = (doc.hardcopyStatus && doc.hardcopyStatus.toLowerCase() === 'diterima');
-        if (!isReceived) {
+        var isClosed = (String(doc.statusTiket || '').toLowerCase() === 'closed');
+        if (!isReceived && isClosed) {
           selectedDocumentIds.push(doc.idTiket);
         }
       }
@@ -1038,7 +1238,6 @@
     if (btn) btn.disabled = (selectedDocumentIds.length === 0);
   }
 
-  // Tombol hijau "Kirim Dokumen" sekarang HANYA MEMBUKA MODAL FORM PEMILIHAN PENGIRIMAN
   function submitBatchSendDocuments() {
     if (!selectedDocumentIds || selectedDocumentIds.length === 0) {
       showToast('Peringatan', 'Silakan pilih minimal 1 dokumen yang akan dikirim.', 'error');
@@ -1071,7 +1270,6 @@
     if (modal) modal.classList.add('hidden');
   }
 
-  // Menangani expand otomatis field ekspedisi jika memilih Kirim Ekspedisi
   function toggleShippingMethodFields(method) {
     var container = document.getElementById('container-shipping-expedition-fields');
     var inputResi = document.getElementById('shipping-input-resi');
@@ -1352,7 +1550,7 @@
       namaEngineer: currentUser ? currentUser.name : 'FSE',
       problem: document.getElementById('fse-pm-problem').value,
       note: 'Dibuat mandiri oleh FSE via Mobile FAB',
-      statusTiket: 'Open', // Dimulai dari Open agar melalui tahapan standar
+      statusTiket: 'Assign', // Dimulai dari status Assign
       dispatcher: currentUser ? currentUser.name : 'FSE',
       noteDispatcher: 'Inisiasi PM Lapangan'
     };
@@ -1364,7 +1562,7 @@
       google.script.run
         .withSuccessHandler(function(res) {
           if (res && res.status === 'success') {
-            showToast('Berhasil', 'Tiket PM berhasil diterbitkan dengan status Open', 'success');
+            showToast('Berhasil', 'Tiket PM berhasil diterbitkan dengan status Assign', 'success');
             loadFSEPortalData();
           }
         })
@@ -1547,7 +1745,7 @@
       namaEngineer: String(document.getElementById('input-engineer').value).trim(),
       problem: String(document.getElementById('input-problem').value).trim(),
       note: String(document.getElementById('input-note').value).trim(),
-      statusTiket: 'Open',
+      statusTiket: 'Assign', // Default status Assign saat diterbitkan monitoring
       dispatcher: currentUser ? currentUser.name : 'Monitoring Officer',
       noteDispatcher: String(document.getElementById('input-note').value).trim()
     };
@@ -1555,7 +1753,7 @@
     currentTicketsList.unshift(payload);
     renderTicketsTable(currentTicketsList);
     closeCreateTicketModal();
-    showToast('Tiket Diterbitkan', 'Tiket ' + payload.idTiket + ' tersimpan.', 'success');
+    showToast('Tiket Diterbitkan', 'Tiket ' + payload.idTiket + ' tersimpan dengan status Assign.', 'success');
 
     if (typeof google !== 'undefined' && google.script && google.script.run) {
       google.script.run
@@ -1645,7 +1843,6 @@
       var badge = getStatusBadgeHtml(t.statusTiket);
       var stLower = String(t.statusTiket || '').toLowerCase();
 
-      // Penulisan tipe shorthand: CM, PM, UAT/Project, Activation
       var rawTipe = String(t.tipeTiket || 'CM').toLowerCase();
       var shorthandTipe = 'CM';
       var tipeBadgeClass = 'bg-rose-50 text-rose-700 border-rose-200';
@@ -1694,7 +1891,6 @@
       html += '<i class="fa-solid fa-clock-rotate-left text-[10px]"></i> Riwayat';
       html += '</button>';
 
-      // Tombol Closed Khusus Role Monitoring / Admin ketika tiket Solved
       if (isMonitoring && (stLower === 'solved' || stLower === 'solving')) {
         html += '<button onclick="executeTicketAction(\'' + escapeHtml(t.idTiket) + '\', \'Closed\', { note: \'Tiket ditutup permanen oleh Monitoring\' })" title="Tutup Tiket Permanen (Pindah ke Kirim Dokumen FSE)" class="px-2.5 py-1 text-[11px] rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold transition flex items-center gap-1 shadow-sm">';
         html += '<i class="fa-solid fa-lock text-[10px]"></i> Closed';
@@ -1733,7 +1929,8 @@
     var s = String(status || '').trim();
     var colorClass = 'bg-slate-100 text-slate-700 border-slate-200';
 
-    if (s === 'Open' || s === 'Baru') colorClass = 'bg-amber-50 text-amber-700 border-amber-200';
+    if (s === 'Assign') colorClass = 'bg-amber-100 text-amber-900 border-amber-300 font-bold';
+    else if (s === 'Open' || s === 'Baru') colorClass = 'bg-amber-50 text-amber-700 border-amber-200';
     else if (s === 'Respon') colorClass = 'bg-sky-50 text-sky-700 border-sky-200';
     else if (s === 'Appointment' || s === 'Re-Appointment') colorClass = 'bg-indigo-50 text-indigo-700 border-indigo-200';
     else if (s === 'Arrival') colorClass = 'bg-fuchsia-50 text-fuchsia-700 border-fuchsia-200';

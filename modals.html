@@ -1,4 +1,56 @@
-<!-- MODAL: BUAT TIKET BARU (10 Input Field) -->
+<!-- ========================================================
+     MODALS & TOAST DEFINITIONS
+     Includes Form Aksi FSE, Form Pengiriman Ekspedisi / Mandiri,
+     Universal Photo Viewer with Google Drive Direct Stream,
+     and Timeline Screenshot Evidence.
+     ======================================================== -->
+
+<div id="modal-import-csv" class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4 z-50 hidden">
+  <div class="bg-white/95 backdrop-blur-xl w-full max-w-md p-6 rounded-2xl border border-white shadow-2xl relative text-xs">
+    <button onclick="closeCSVImportModal()" class="absolute top-5 right-5 text-slate-400 hover:text-slate-600 text-lg">
+      <i class="fa-solid fa-xmark"></i>
+    </button>
+
+    <div class="flex items-center gap-3 mb-4 border-b border-slate-200/80 pb-3">
+      <div class="w-10 h-10 rounded-xl bg-teal-50 border border-teal-200 flex items-center justify-center text-teal-700">
+        <i class="fa-solid fa-file-csv text-base"></i>
+      </div>
+      <div>
+        <h3 id="csv-modal-title" class="font-bold text-sm text-slate-800 tracking-tight">Import Data CSV</h3>
+        <p id="csv-modal-subtitle" class="text-[11px] text-slate-500">Format kolom wajib mengikuti urutan database</p>
+      </div>
+    </div>
+
+    <div class="p-3 rounded-xl bg-slate-50 border border-slate-200 text-[11px] space-y-1.5 mb-4">
+      <p class="font-bold text-slate-700 flex items-center gap-1">
+        <i class="fa-solid fa-circle-info text-teal-600"></i> Urutan Kolom CSV:
+      </p>
+      <div id="csv-format-guide" class="font-mono text-[10px] text-slate-600 bg-white p-2 rounded-lg border border-slate-200 break-all">
+        ID_Mesin, Serial_Number, Nama_Bank, Lokasi_ATM, Tipe_Mesin, Status_Mesin, FSE_Pengelola
+      </div>
+      <p id="csv-anti-dupe-note" class="text-[10px] text-amber-700 hidden">
+        <i class="fa-solid fa-shield-halved mr-1"></i> Baris dengan Serial Number yang sudah ada di database akan dilewati secara otomatis.
+      </p>
+    </div>
+
+    <form id="form-import-csv" onsubmit="handleCSVImportSubmit(event)" class="space-y-4">
+      <input type="hidden" id="csv-target-type" value="Machines">
+      <div>
+        <label class="block text-slate-700 font-semibold mb-1">Pilih File CSV (.csv) *</label>
+        <input type="file" id="input-csv-file" accept=".csv" required class="soft-input w-full px-3 py-2 rounded-xl text-xs">
+      </div>
+
+      <div class="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-200/80">
+        <button type="button" onclick="closeCSVImportModal()" class="px-4 py-2 rounded-xl bg-slate-100 text-slate-700 hover:bg-slate-200 transition font-medium">Batal</button>
+        <button type="submit" id="btn-submit-csv" class="soft-btn-primary font-semibold px-5 py-2 rounded-xl flex items-center gap-1.5">
+          <i class="fa-solid fa-cloud-arrow-up"></i>
+          <span>Mulai Impor</span>
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+
 <div id="modal-create-ticket" class="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4 z-50 hidden">
   <div class="bg-white/95 backdrop-blur-xl w-full max-w-2xl max-h-[92vh] overflow-y-auto p-6 rounded-2xl border border-white shadow-2xl relative">
     
@@ -17,7 +69,6 @@
     </div>
 
     <form id="form-new-ticket" onsubmit="handleFormSubmit(event)" class="space-y-4 text-xs">
-      
       <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div>
           <label class="block text-slate-700 font-semibold mb-1">1. Nomor Tiket (Auto)</label>
@@ -25,12 +76,12 @@
             class="soft-input w-full px-3 py-2 rounded-xl text-teal-800 font-mono font-bold bg-slate-100/80 cursor-not-allowed">
         </div>
         <div>
-          <label class="block text-slate-700 font-semibold mb-1">5. Tanggal Buat</label>
+          <label class="block text-slate-700 font-semibold mb-1">Tanggal Buat</label>
           <input type="text" id="input-ticket-date" readonly 
             class="soft-input w-full px-3 py-2 rounded-xl text-slate-600 font-mono bg-slate-100/80 cursor-not-allowed">
         </div>
         <div>
-          <label class="block text-slate-700 font-semibold mb-1">6. Jam Buat</label>
+          <label class="block text-slate-700 font-semibold mb-1">Jam Buat</label>
           <input type="text" id="input-ticket-time" readonly 
             class="soft-input w-full px-3 py-2 rounded-xl text-slate-600 font-mono bg-slate-100/80 cursor-not-allowed">
         </div>
@@ -58,7 +109,7 @@
             class="soft-input w-full px-3 py-2 rounded-xl text-teal-800 font-mono font-bold bg-slate-100/80 cursor-not-allowed">
         </div>
         <div>
-          <label class="block text-slate-700 font-semibold mb-1">7. Tipe Tiket *</label>
+          <label class="block text-slate-700 font-semibold mb-1">5. Tipe Tiket *</label>
           <select id="input-ticket-type" required class="soft-input w-full px-3 py-2 rounded-xl">
             <option value="Corrective Maintenance (CM)">Corrective Maintenance (CM)</option>
             <option value="Preventive Maintenance (PM)">Preventive Maintenance (PM)</option>
@@ -69,21 +120,21 @@
       </div>
 
       <div>
-        <label class="block text-slate-700 font-semibold mb-1">8. Nama Engineer (Assigned FSE) *</label>
+        <label class="block text-slate-700 font-semibold mb-1">6. Nama Engineer (Assigned FSE) *</label>
         <select id="input-engineer" required class="soft-input w-full px-3 py-2 rounded-xl">
           <option value="">-- Pilih Field Service Engineer --</option>
         </select>
       </div>
 
       <div>
-        <label class="block text-slate-700 font-semibold mb-1">9. Problem (Deskripsi Keluhan) *</label>
-        <textarea id="input-problem" rows="3" required placeholder="Contoh: Card reader error code 42, cash jammed, dispenser shutter failure..."
+        <label class="block text-slate-700 font-semibold mb-1">7. Problem (Deskripsi Keluhan) *</label>
+        <textarea id="input-problem" rows="3" required placeholder="Contoh: Card reader error code 42, cash jammed..."
           class="soft-input w-full px-3 py-2 rounded-xl"></textarea>
       </div>
 
       <div>
-        <label class="block text-slate-700 font-semibold mb-1">10. Note (Catatan Tambahan)</label>
-        <textarea id="input-note" rows="2" placeholder="Catatan khusus lokasi, nomor tiket perbankan, kontak satpam..."
+        <label class="block text-slate-700 font-semibold mb-1">8. Note Dispatcher (Catatan Instruksi)</label>
+        <textarea id="input-note" rows="2" placeholder="Catatan khusus lokasi, janjian satpam, part cadangan..."
           class="soft-input w-full px-3 py-2 rounded-xl"></textarea>
       </div>
 
@@ -100,14 +151,386 @@
   </div>
 </div>
 
-<!-- MODAL: DAFTARKAN AKUN FSE BARU -->
-<div id="modal-create-fse" class="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4 z-50 hidden">
-  <div class="bg-white/95 backdrop-blur-xl w-full max-w-md p-6 rounded-2xl border border-white shadow-2xl relative">
-    
-    <button onclick="closeCreateFSEModal()" class="absolute top-5 right-5 text-slate-400 hover:text-slate-600 text-lg">
+<div id="modal-fse-appointment" class="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4 z-50 hidden">
+  <div class="bg-white/95 backdrop-blur-xl w-full max-w-sm p-5 rounded-2xl border border-white shadow-2xl relative text-xs">
+    <div class="flex items-center gap-2.5 mb-3 border-b border-slate-100 pb-2.5">
+      <div class="w-8 h-8 rounded-lg bg-indigo-50 text-indigo-700 flex items-center justify-center">
+        <i class="fa-solid fa-calendar-check text-sm"></i>
+      </div>
+      <div>
+        <h4 class="font-bold text-slate-800">Form Appointment</h4>
+        <p class="text-[10px] text-slate-500">Tiket: <span id="fse-appt-ticket-id" class="font-mono font-bold text-indigo-600"></span></p>
+      </div>
+    </div>
+
+    <form onsubmit="submitFSEAppointment(event)" class="space-y-3">
+      <div>
+        <label class="block text-slate-700 font-semibold mb-1">Permintaan Appointment *</label>
+        <select id="fse-appt-permintaan" required class="soft-input w-full px-3 py-2 rounded-xl">
+          <option value="FSE">FSE (Inisiatif Teknisi)</option>
+          <option value="Vendor/PIC">Vendor / PIC Bank</option>
+        </select>
+      </div>
+
+      <div class="grid grid-cols-2 gap-2">
+        <div>
+          <label class="block text-slate-700 font-semibold mb-1">Tanggal Janjian *</label>
+          <input type="date" id="fse-appt-date" required class="soft-input w-full px-2.5 py-1.5 rounded-xl font-mono">
+        </div>
+        <div>
+          <label class="block text-slate-700 font-semibold mb-1">Jam Janjian *</label>
+          <input type="time" id="fse-appt-time" required class="soft-input w-full px-2.5 py-1.5 rounded-xl font-mono">
+        </div>
+      </div>
+
+      <div>
+        <label class="block text-slate-700 font-semibold mb-1">Note (Catatan Janjian) *</label>
+        <textarea id="fse-appt-note" rows="2" required placeholder="Contoh: Janjian bertemu PIC Bank di lokasi..." class="soft-input w-full px-3 py-2 rounded-xl"></textarea>
+      </div>
+
+      <div class="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+        <button type="button" onclick="closeFSEApptModal()" class="px-3 py-1.5 rounded-lg bg-slate-100 text-slate-600 font-medium">Batal</button>
+        <button type="submit" class="soft-btn-primary px-4 py-1.5 rounded-lg font-semibold shadow-sm">Konfirmasi Appointment</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div id="modal-fse-handling" class="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4 z-50 hidden">
+  <div class="bg-white/95 backdrop-blur-xl w-full max-w-sm p-5 rounded-2xl border border-white shadow-2xl relative text-xs">
+    <div class="flex items-center gap-2.5 mb-3 border-b border-slate-100 pb-2.5">
+      <div class="w-8 h-8 rounded-lg bg-blue-50 text-blue-700 flex items-center justify-center">
+        <i class="fa-solid fa-screwdriver-wrench text-sm"></i>
+      </div>
+      <div>
+        <h4 class="font-bold text-slate-800">Mulai Handling di Lokasi</h4>
+        <p class="text-[10px] text-slate-500">Tiket: <span id="fse-handling-ticket-id" class="font-mono font-bold text-blue-600"></span></p>
+      </div>
+    </div>
+
+    <form onsubmit="submitFSEHandling(event)" class="space-y-3">
+      <div>
+        <label class="block text-slate-700 font-semibold mb-1">Catatan Handling *</label>
+        <textarea id="fse-handling-note" rows="3" required placeholder="Contoh: Pemeriksaan sensor feed dispenser & modul card reader..." class="soft-input w-full px-3 py-2 rounded-xl"></textarea>
+      </div>
+
+      <div class="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+        <button type="button" onclick="closeFSEHandlingModal()" class="px-3 py-1.5 rounded-lg bg-slate-100 text-slate-600 font-medium">Batal</button>
+        <button type="submit" class="soft-btn-primary px-4 py-1.5 rounded-lg font-semibold shadow-sm">Simpan Handling</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div id="modal-fse-solved" class="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4 z-50 hidden">
+  <div class="bg-white/95 backdrop-blur-xl w-full max-w-sm p-5 rounded-2xl border border-white shadow-2xl relative text-xs max-h-[92vh] overflow-y-auto">
+    <div class="flex items-center gap-2.5 mb-3 border-b border-slate-100 pb-2.5">
+      <div class="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-700 flex items-center justify-center">
+        <i class="fa-solid fa-circle-check text-sm"></i>
+      </div>
+      <div>
+        <h4 class="font-bold text-slate-800">Penyelesaian Mesin (Solved)</h4>
+        <p class="text-[10px] text-slate-500">Tiket: <span id="fse-solved-ticket-id" class="font-mono font-bold text-emerald-600"></span></p>
+      </div>
+    </div>
+
+    <form onsubmit="submitFSESolved(event)" class="space-y-3">
+      <div>
+        <label class="block text-slate-700 font-semibold mb-1">Waktu Selesai (Now)</label>
+        <input type="text" id="fse-solved-now" readonly class="soft-input w-full px-3 py-2 rounded-xl font-mono text-emerald-800 font-bold bg-slate-100 cursor-not-allowed">
+      </div>
+
+      <div>
+        <label class="block text-slate-700 font-semibold mb-1">No. FE Report *</label>
+        <input type="text" id="fse-solved-no-fe" required placeholder="Contoh: FE-2026-0911-001" class="soft-input w-full px-3 py-2 rounded-xl font-mono text-teal-800 font-bold uppercase tracking-wider">
+      </div>
+
+      <div>
+        <label class="block text-slate-700 font-semibold mb-1">Catatan Tindakan Perbaikan *</label>
+        <textarea id="fse-solved-note" rows="2" required placeholder="Contoh: Pembersihan debu optical sensor, clearing card jammed & test tarik tunai normal..." class="soft-input w-full px-3 py-2 rounded-xl"></textarea>
+      </div>
+
+      <div>
+        <label class="block text-slate-700 font-semibold mb-1">Upload Foto FE Report [Hardcopy] *</label>
+        <input type="file" id="fse-solved-file" accept="image/*" required onchange="handleFileChange(this, 'btn-preview-solved-img')" class="soft-input w-full px-2 py-1.5 rounded-xl">
+        <div class="mt-2">
+          <button type="button" id="btn-preview-solved-img" onclick="openLocalImagePreview('fse-solved-file', 'Preview Foto FE Report')" 
+            class="hidden px-3 py-1.5 rounded-xl bg-teal-50 text-teal-700 border border-teal-200 text-xs font-semibold hover:bg-teal-100 transition flex items-center gap-1.5 shadow-sm">
+            <i class="fa-solid fa-image"></i>
+            <span>Lihat Foto</span>
+          </button>
+        </div>
+      </div>
+
+      <div class="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+        <button type="button" onclick="closeFSESolvedModal()" class="px-3 py-1.5 rounded-lg bg-slate-100 text-slate-600 font-medium">Batal</button>
+        <button type="submit" id="btn-submit-fse-solved" class="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-xl font-semibold shadow-sm flex items-center gap-1.5">
+          <i class="fa-solid fa-cloud-arrow-up"></i> Selesaikan Tiket
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div id="modal-fse-cancel" class="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4 z-50 hidden">
+  <div class="bg-white/95 backdrop-blur-xl w-full max-w-sm p-5 rounded-2xl border border-white shadow-2xl relative text-xs max-h-[90vh] overflow-y-auto">
+    <div class="flex items-center gap-2.5 mb-3 border-b border-slate-100 pb-2.5">
+      <div class="w-8 h-8 rounded-lg bg-rose-50 text-rose-700 flex items-center justify-center">
+        <i class="fa-solid fa-ban text-sm"></i>
+      </div>
+      <div>
+        <h4 class="font-bold text-slate-800">Batalkan Tiket (Cancel)</h4>
+        <p class="text-[10px] text-slate-500">Tiket: <span id="fse-cancel-ticket-id" class="font-mono font-bold text-rose-600"></span></p>
+      </div>
+    </div>
+
+    <form onsubmit="submitFSECancel(event)" class="space-y-3">
+      <div>
+        <label class="block text-slate-700 font-semibold mb-1">Waktu Cancel (Now)</label>
+        <input type="text" id="fse-cancel-now" readonly class="soft-input w-full px-3 py-2 rounded-xl font-mono text-rose-800 font-bold bg-slate-100 cursor-not-allowed">
+      </div>
+
+      <div>
+        <label class="block text-slate-700 font-semibold mb-1">Alasan Pembatalan *</label>
+        <textarea id="fse-cancel-note" rows="2" required placeholder="Contoh: Mesin ternyata sudah online kembali saat sampai di lokasi..." class="soft-input w-full px-3 py-2 rounded-xl"></textarea>
+      </div>
+
+      <div>
+        <label class="block text-slate-700 font-semibold mb-1">Upload Bukti (Foto ATM Online / Chat Vendor) *</label>
+        <input type="file" id="fse-cancel-file" accept="image/*" required onchange="handleFileChange(this, 'btn-preview-cancel-img')" class="soft-input w-full px-2 py-1.5 rounded-xl">
+        <div class="mt-2">
+          <button type="button" id="btn-preview-cancel-img" onclick="openLocalImagePreview('fse-cancel-file', 'Preview Bukti Cancel')" 
+            class="hidden px-3 py-1.5 rounded-xl bg-rose-50 text-rose-700 border border-rose-200 text-xs font-semibold hover:bg-rose-100 transition flex items-center gap-1.5 shadow-sm">
+            <i class="fa-solid fa-image"></i>
+            <span>Lihat Foto</span>
+          </button>
+        </div>
+      </div>
+
+      <div class="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+        <button type="button" onclick="closeFSECancelModal()" class="px-3 py-1.5 rounded-lg bg-slate-100 text-slate-600 font-medium">Batal</button>
+        <button type="submit" id="btn-submit-fse-cancel" class="bg-rose-600 hover:bg-rose-700 text-white px-4 py-2 rounded-xl font-semibold shadow-sm flex items-center gap-1.5">
+          <i class="fa-solid fa-circle-xmark"></i> Konfirmasi Batal
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div id="modal-fse-pending" class="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4 z-50 hidden">
+  <div class="bg-white/95 backdrop-blur-xl w-full max-w-sm p-5 rounded-2xl border border-white shadow-2xl relative text-xs max-h-[90vh] overflow-y-auto">
+    <div class="flex items-center gap-2.5 mb-3 border-b border-slate-100 pb-2.5">
+      <div class="w-8 h-8 rounded-lg bg-amber-50 text-amber-700 flex items-center justify-center">
+        <i class="fa-solid fa-pause text-sm"></i>
+      </div>
+      <div>
+        <h4 class="font-bold text-slate-800">Pending Pengerjaan ATM</h4>
+        <p class="text-[10px] text-slate-500">Tiket: <span id="fse-pending-ticket-id" class="font-mono font-bold text-amber-600"></span></p>
+      </div>
+    </div>
+
+    <form onsubmit="submitFSEPending(event)" class="space-y-3">
+      <div>
+        <label class="block text-slate-700 font-semibold mb-1">Waktu Pending (Now)</label>
+        <input type="text" id="fse-pending-now" readonly class="soft-input w-full px-3 py-2 rounded-xl font-mono text-amber-800 font-bold bg-slate-100 cursor-not-allowed">
+      </div>
+
+      <div>
+        <label class="block text-slate-700 font-semibold mb-1">Alasan Pending *</label>
+        <select id="fse-pending-alasan" required onchange="handlePendingAlasanChange(this)" class="soft-input w-full px-3 py-2 rounded-xl">
+          <option value="Pending by lokasi tutup">Pending by Lokasi Tutup</option>
+          <option value="Pending spare part">Pending Spare Part</option>
+          <option value="Lain-lain">Lain-lain</option>
+        </select>
+      </div>
+
+      <div id="pending-lokasi-foto-container" class="space-y-1">
+        <label class="block text-slate-700 font-semibold mb-1">Upload Bukti Foto Lokasi Tutup / Chat *</label>
+        <input type="file" id="fse-pending-file" accept="image/*" onchange="handleFileChange(this, 'btn-preview-pending-img')" class="soft-input w-full px-2 py-1.5 rounded-xl">
+        <div class="mt-1">
+          <button type="button" id="btn-preview-pending-img" onclick="openLocalImagePreview('fse-pending-file', 'Bukti Lokasi Tutup')" 
+            class="hidden px-3 py-1.5 rounded-xl bg-amber-50 text-amber-800 border border-amber-200 text-xs font-semibold hover:bg-amber-100 transition flex items-center gap-1.5 shadow-sm">
+            <i class="fa-solid fa-image"></i>
+            <span>Lihat Foto</span>
+          </button>
+        </div>
+      </div>
+
+      <div>
+        <label class="block text-slate-700 font-semibold mb-1">Rencana Tanggal & Jam Pengerjaan Lanjutan *</label>
+        <input type="datetime-local" id="fse-pending-lanjutan" required class="soft-input w-full px-3 py-2 rounded-xl font-mono">
+      </div>
+
+      <div>
+        <label class="block text-slate-700 font-semibold mb-1">Catatan Pending *</label>
+        <textarea id="fse-pending-note" rows="2" required placeholder="Contoh: Gedung bank sudah tutup jam 17:00, security mengarahkan lanjut besok..." class="soft-input w-full px-3 py-2 rounded-xl"></textarea>
+      </div>
+
+      <div class="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+        <button type="button" onclick="closeFSEPendingModal()" class="px-3 py-1.5 rounded-lg bg-slate-100 text-slate-600 font-medium">Batal</button>
+        <button type="submit" id="btn-submit-fse-pending" class="bg-amber-600 hover:bg-amber-700 text-white px-4 py-2 rounded-xl font-semibold shadow-sm flex items-center gap-1.5">
+          <i class="fa-solid fa-pause"></i> Simpan Status Pending
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div id="modal-fse-shipping" class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4 z-50 hidden">
+  <div class="bg-white/95 backdrop-blur-xl w-full max-w-md p-5 rounded-2xl border border-white shadow-2xl relative text-xs">
+    <button onclick="closeFSEShippingModal()" class="absolute top-4 right-4 text-slate-400 hover:text-slate-600 text-lg">
       <i class="fa-solid fa-xmark"></i>
     </button>
 
+    <div class="flex items-center gap-2.5 mb-3 border-b border-slate-100 pb-2.5">
+      <div class="w-9 h-9 rounded-xl bg-teal-50 text-teal-700 flex items-center justify-center border border-teal-200">
+        <i class="fa-solid fa-paper-plane text-sm"></i>
+      </div>
+      <div>
+        <h4 class="font-bold text-slate-800 text-sm">Konfirmasi Pengiriman Berkas Fisik</h4>
+        <p class="text-[10px] text-slate-500">Kirim kolektif dokumen hardcopy laporan FE</p>
+      </div>
+    </div>
+
+    <!-- Informasi Jumlah Berkas Terpilih -->
+    <div class="p-3 rounded-xl bg-teal-50/70 border border-teal-100 mb-3 flex items-center justify-between">
+      <span class="text-teal-900 font-medium">Jumlah Dokumen Dipilih :</span>
+      <span id="shipping-modal-count-badge" class="px-2.5 py-0.5 rounded-full bg-teal-600 text-white font-mono font-bold text-xs">0 Dokumen</span>
+    </div>
+
+    <form id="form-fse-shipping" onsubmit="handleConfirmBatchShipping(event)" class="space-y-3.5">
+      
+      <!-- Pilihan Metode Pengiriman -->
+      <div>
+        <label class="block text-slate-700 font-semibold mb-1.5">Metode Pengiriman Berkas *</label>
+        <div class="grid grid-cols-2 gap-2">
+          <label class="flex items-center gap-2 p-2.5 rounded-xl border border-slate-200 bg-white hover:border-teal-500 cursor-pointer transition">
+            <input type="radio" name="shipping_method" value="Kirim Sendiri ke Kantor" checked onchange="toggleShippingMethodFields(this.value)" class="text-teal-600 focus:ring-teal-500">
+            <span class="font-medium text-slate-800 text-[11px]">Kirim Sendiri ke Kantor</span>
+          </label>
+          <label class="flex items-center gap-2 p-2.5 rounded-xl border border-slate-200 bg-white hover:border-teal-500 cursor-pointer transition">
+            <input type="radio" name="shipping_method" value="Kirim Ekspedisi" onchange="toggleShippingMethodFields(this.value)" class="text-teal-600 focus:ring-teal-500">
+            <span class="font-medium text-slate-800 text-[11px]">Kirim Ekspedisi</span>
+          </label>
+        </div>
+      </div>
+
+      <!-- Expandable Field Khusus Kirim Ekspedisi -->
+      <div id="container-shipping-expedition-fields" class="space-y-3 p-3 rounded-xl bg-slate-50 border border-slate-200/80 hidden">
+        <div>
+          <label class="block text-slate-700 font-semibold mb-1">Nama Ekspedisi / Kurir *</label>
+          <select id="shipping-input-ekspedisi" class="soft-input w-full px-3 py-2 rounded-xl">
+            <option value="JNE">JNE Express</option>
+            <option value="J&T Express">J&T Express</option>
+            <option value="TIKI">TIKI</option>
+            <option value="SiCepat">SiCepat Ekspres</option>
+            <option value="Pos Indonesia">Pos Indonesia</option>
+            <option value="Wahana">Wahana Express</option>
+            <option value="AnterAja">AnterAja</option>
+            <option value="Lainnya">Lain-lain</option>
+          </select>
+        </div>
+
+        <div>
+          <label class="block text-slate-700 font-semibold mb-1">Nomor Resi Pengiriman *</label>
+          <input type="text" id="shipping-input-resi" placeholder="Contoh: JP0928172901 / JNE12345678" class="soft-input w-full px-3 py-2 rounded-xl font-mono uppercase tracking-wider text-teal-800 font-bold">
+        </div>
+
+        <div>
+          <label class="block text-slate-700 font-semibold mb-1">Jenis Layanan Pengiriman *</label>
+          <select id="shipping-input-jenis" class="soft-input w-full px-3 py-2 rounded-xl">
+            <option value="Reguler">Reguler</option>
+            <option value="Express">Express (Next Day / Same Day)</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+        <button type="button" onclick="closeFSEShippingModal()" class="px-3.5 py-1.5 rounded-xl bg-slate-100 text-slate-600 font-medium">Batal</button>
+        <button type="submit" id="btn-submit-shipping-batch" class="soft-btn-primary px-5 py-2 rounded-xl font-bold shadow-sm flex items-center gap-1.5">
+          <i class="fa-solid fa-paper-plane"></i>
+          <span>Konfirmasi &amp; Kirim Berkas</span>
+        </button>
+      </div>
+
+    </form>
+  </div>
+</div>
+
+<div id="fse-modal-timeline" class="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4 z-50 hidden">
+  <div class="bg-white/95 backdrop-blur-xl w-full max-w-sm max-h-[90vh] overflow-y-auto p-5 rounded-2xl border border-white shadow-2xl relative text-xs flex flex-col">
+    
+    <button onclick="closeFSETimelineModal()" class="absolute top-4 right-4 text-slate-400 hover:text-slate-600 text-lg">
+      <i class="fa-solid fa-xmark"></i>
+    </button>
+    
+    <div class="flex items-center justify-between border-b border-slate-100 pb-2.5 mb-3 pr-6">
+      <div>
+        <h4 class="font-bold text-slate-800 text-sm flex items-center gap-1.5">
+          <i class="fa-solid fa-clock-rotate-left text-teal-600"></i>
+          <span>Riwayat Status &amp; Downtime</span>
+        </h4>
+        <p class="text-[10px] text-slate-500 font-mono mt-0.5">ID: <span id="timeline-ticket-id" class="text-teal-700 font-bold"></span></p>
+      </div>
+    </div>
+
+    <div class="mb-3">
+      <button id="btn-capture-timeline" onclick="captureTimelineEvidence()" title="Ambil Screenshot Bukti Linimasa Lengkap" 
+        class="w-full py-2 rounded-xl bg-teal-50 hover:bg-teal-600 hover:text-white text-teal-700 border border-teal-200 text-xs font-semibold transition flex items-center justify-center gap-1.5 shadow-sm">
+        <i class="fa-solid fa-camera"></i>
+        <span>Screenshot Evidence (Download PNG)</span>
+      </button>
+    </div>
+
+    <div id="timeline-capture-target" class="p-3 bg-white rounded-xl border border-slate-100 space-y-3">
+      <div class="border-b border-slate-100 pb-1.5">
+        <p class="text-[9px] font-mono font-bold text-slate-400 uppercase">EVIDENCE AUDIT LOG • HARDIANSYAH FAM</p>
+        <p id="timeline-capture-meta" class="text-[10px] text-slate-600 font-semibold"></p>
+      </div>
+      <div id="timeline-container"></div>
+    </div>
+  </div>
+</div>
+
+<div id="modal-image-preview" class="fixed inset-0 bg-slate-900/60 backdrop-blur-md flex items-center justify-center p-4 z-[60] hidden">
+  <div class="bg-white/95 backdrop-blur-xl w-full max-w-md max-h-[92vh] p-4 rounded-2xl border border-white shadow-2xl relative flex flex-col">
+    <div class="flex items-center justify-between pb-3 mb-2 border-b border-slate-200 gap-2">
+      <h4 id="preview-modal-title" class="font-bold text-xs text-slate-800 truncate flex items-center gap-1.5 flex-1">
+        <i class="fa-solid fa-image text-teal-600"></i>
+        <span>Preview Bukti Foto</span>
+      </h4>
+
+      <div class="flex items-center gap-1.5">
+        <!-- Direct External Link Button -->
+        <a id="preview-modal-external-link" href="#" target="_blank" title="Buka File Asli di Tab Baru" 
+          class="px-2 py-1 rounded-lg bg-teal-50 text-teal-700 border border-teal-200 hover:bg-teal-100 text-[10px] font-semibold flex items-center gap-1 transition shadow-sm">
+          <i class="fa-solid fa-arrow-up-right-from-square"></i>
+          <span>Buka di Drive</span>
+        </a>
+        <button type="button" onclick="closeImagePreviewModal()" class="w-7 h-7 rounded-lg bg-slate-100 text-slate-500 hover:text-slate-800 hover:bg-slate-200 flex items-center justify-center transition">
+          <i class="fa-solid fa-xmark text-sm"></i>
+        </button>
+      </div>
+    </div>
+
+    <!-- Image Viewport Area -->
+    <div class="flex-1 overflow-auto flex items-center justify-center bg-slate-900/5 rounded-xl p-2 min-h-[220px] relative">
+      <img id="preview-modal-img" src="" alt="Bukti Foto" 
+        onerror="handleImagePreviewError(this)" 
+        class="max-h-[70vh] max-w-full object-contain rounded-lg shadow-sm">
+      <div id="preview-modal-fallback-msg" class="hidden text-center p-4 text-slate-500 text-xs">
+        <i class="fa-solid fa-circle-exclamation text-amber-500 text-2xl mb-1 block"></i>
+        <span>Gambar tidak dapat dimuat langsung di peramban. Silakan gunakan tombol <b>Buka di Drive</b> di atas.</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="modal-create-fse" class="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4 z-50 hidden">
+  <div class="bg-white/95 backdrop-blur-xl w-full max-w-md p-6 rounded-2xl border border-white shadow-2xl relative">
+    <button onclick="closeCreateFSEModal()" class="absolute top-5 right-5 text-slate-400 hover:text-slate-600 text-lg">
+      <i class="fa-solid fa-xmark"></i>
+    </button>
     <div class="flex items-center gap-3 mb-5 border-b border-slate-200/80 pb-3.5">
       <div class="w-10 h-10 rounded-xl bg-teal-50 border border-teal-200 flex items-center justify-center text-teal-700">
         <i class="fa-solid fa-user-plus text-base"></i>
@@ -117,241 +540,116 @@
         <p class="text-[11px] text-slate-500">Pendaftaran Teknisi Lapangan oleh Monitoring</p>
       </div>
     </div>
-
     <form id="form-new-fse" onsubmit="handleCreateFSESubmit(event)" class="space-y-3.5 text-xs">
       <div>
         <label class="block text-slate-700 font-semibold mb-1">Nama Lengkap Teknisi *</label>
-        <input type="text" id="input-fse-nama" required placeholder="Contoh: Rian Anggoro" 
-          class="soft-input w-full px-3 py-2 rounded-xl">
+        <input type="text" id="input-fse-nama" required placeholder="Contoh: Rian Anggoro" class="soft-input w-full px-3 py-2 rounded-xl">
       </div>
-
       <div>
         <label class="block text-slate-700 font-semibold mb-1">Nomor Handphone (Login Akun) *</label>
-        <input type="text" id="input-fse-hp" required placeholder="Contoh: 081298765432" 
-          class="soft-input w-full px-3 py-2 rounded-xl font-mono">
+        <input type="text" id="input-fse-hp" required placeholder="Contoh: 081298765432" class="soft-input w-full px-3 py-2 rounded-xl font-mono">
       </div>
-
       <div>
         <label class="block text-slate-700 font-semibold mb-1">Password Akun *</label>
-        <input type="text" id="input-fse-password" required placeholder="Masukkan kata sandi awal" 
-          class="soft-input w-full px-3 py-2 rounded-xl">
+        <input type="text" id="input-fse-password" required placeholder="Masukkan kata sandi awal" class="soft-input w-full px-3 py-2 rounded-xl">
       </div>
-
       <div class="grid grid-cols-2 gap-3">
         <div>
           <label class="block text-slate-700 font-semibold mb-1">Wilayah / Area Tugas *</label>
-          <input type="text" id="input-fse-wilayah" required placeholder="Contoh: Jakarta Barat" 
-            class="soft-input w-full px-3 py-2 rounded-xl">
+          <input type="text" id="input-fse-wilayah" required placeholder="Contoh: Jakarta Barat" class="soft-input w-full px-3 py-2 rounded-xl">
         </div>
         <div>
           <label class="block text-slate-700 font-semibold mb-1">Kelolaan Mesin *</label>
-          <input type="number" id="input-fse-mesin" required value="5" min="0" 
-            class="soft-input w-full px-3 py-2 rounded-xl font-mono font-bold text-teal-800">
+          <input type="number" id="input-fse-mesin" required value="5" min="0" class="soft-input w-full px-3 py-2 rounded-xl font-mono font-bold text-teal-800">
         </div>
       </div>
-
-      <div class="p-2.5 rounded-xl bg-teal-50/70 border border-teal-100 text-[11px] text-teal-800 mt-2">
-        <i class="fa-solid fa-circle-check mr-1 text-teal-600"></i>
-        Data tersinkron otomatis ke sheet <b>FSE</b> &amp; <b>Users</b>, serta langsung menerima penugasan.
-      </div>
-
       <div class="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-200/80">
-        <button type="button" onclick="closeCreateFSEModal()" class="px-4 py-2 rounded-xl bg-slate-100 text-slate-700 hover:bg-slate-200 transition font-medium">
-          Batal
-        </button>
-        <button type="submit" id="btn-submit-fse" class="soft-btn-primary font-semibold px-5 py-2 rounded-xl flex items-center gap-1.5">
-          <i class="fa-solid fa-save"></i>
-          <span>Simpan &amp; Aktifkan</span>
-        </button>
+        <button type="button" onclick="closeCreateFSEModal()" class="px-4 py-2 rounded-xl bg-slate-100 text-slate-700 hover:bg-slate-200 transition font-medium">Batal</button>
+        <button type="submit" id="btn-submit-fse" class="soft-btn-primary font-semibold px-5 py-2 rounded-xl flex items-center gap-1.5"><i class="fa-solid fa-save"></i> Simpan</button>
       </div>
     </form>
   </div>
 </div>
 
-<!-- MODAL: EDIT DATA FSE & KELOLAAN MESIN (CRUD MONITORING) -->
 <div id="modal-edit-fse" class="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4 z-50 hidden">
   <div class="bg-white/95 backdrop-blur-xl w-full max-w-md p-6 rounded-2xl border border-white shadow-2xl relative">
-    
-    <button onclick="closeEditFSEModal()" class="absolute top-5 right-5 text-slate-400 hover:text-slate-600 text-lg">
-      <i class="fa-solid fa-xmark"></i>
-    </button>
-
+    <button onclick="closeEditFSEModal()" class="absolute top-5 right-5 text-slate-400 hover:text-slate-600 text-lg"><i class="fa-solid fa-xmark"></i></button>
     <div class="flex items-center gap-3 mb-5 border-b border-slate-200/80 pb-3.5">
-      <div class="w-10 h-10 rounded-xl bg-teal-50 border border-teal-200 flex items-center justify-center text-teal-700">
-        <i class="fa-solid fa-user-pen text-base"></i>
-      </div>
-      <div>
-        <h3 class="font-bold text-sm text-slate-800 tracking-tight">EDIT DATA FSE &amp; KELOLAAN MESIN</h3>
-        <p class="text-[11px] text-slate-500">Pembaruan profil teknisi dan alokasi mesin ATM</p>
-      </div>
+      <div class="w-10 h-10 rounded-xl bg-teal-50 border border-teal-200 flex items-center justify-center text-teal-700"><i class="fa-solid fa-user-pen text-base"></i></div>
+      <div><h3 class="font-bold text-sm text-slate-800">EDIT DATA FSE &amp; KELOLAAN</h3></div>
     </div>
-
     <form id="form-edit-fse" onsubmit="handleEditFSESubmit(event)" class="space-y-3.5 text-xs">
+      <input type="hidden" id="edit-fse-userid">
       <div>
-        <label class="block text-slate-700 font-semibold mb-1">ID Karyawan (User_ID)</label>
-        <input type="text" id="edit-fse-userid" readonly 
-          class="soft-input w-full px-3 py-2 rounded-xl font-mono font-bold text-teal-800 bg-slate-100/80 cursor-not-allowed">
+        <label class="block text-slate-700 font-semibold mb-1">Nama Lengkap *</label>
+        <input type="text" id="edit-fse-nama" required class="soft-input w-full px-3 py-2 rounded-xl">
       </div>
-
       <div>
-        <label class="block text-slate-700 font-semibold mb-1">Nama Lengkap Teknisi *</label>
-        <input type="text" id="edit-fse-nama" required 
-          class="soft-input w-full px-3 py-2 rounded-xl">
+        <label class="block text-slate-700 font-semibold mb-1">Nomor HP *</label>
+        <input type="text" id="edit-fse-hp" required class="soft-input w-full px-3 py-2 rounded-xl font-mono">
       </div>
-
-      <div>
-        <label class="block text-slate-700 font-semibold mb-1">Nomor Handphone (No HP) *</label>
-        <input type="text" id="edit-fse-hp" required 
-          class="soft-input w-full px-3 py-2 rounded-xl font-mono">
-      </div>
-
-      <div>
-        <label class="block text-slate-700 font-semibold mb-1">Ganti Password (Opsional)</label>
-        <input type="text" id="edit-fse-password" placeholder="Kosongkan bila tidak ingin mengubah sandi" 
-          class="soft-input w-full px-3 py-2 rounded-xl">
-      </div>
-
       <div class="grid grid-cols-2 gap-3">
         <div>
-          <label class="block text-slate-700 font-semibold mb-1">Wilayah / Area Tugas *</label>
-          <input type="text" id="edit-fse-wilayah" required 
-            class="soft-input w-full px-3 py-2 rounded-xl">
+          <label class="block text-slate-700 font-semibold mb-1">Wilayah *</label>
+          <input type="text" id="edit-fse-wilayah" required class="soft-input w-full px-3 py-2 rounded-xl">
         </div>
         <div>
           <label class="block text-slate-700 font-semibold mb-1">Kelolaan Mesin *</label>
-          <input type="number" id="edit-fse-mesin" required min="0" 
-            class="soft-input w-full px-3 py-2 rounded-xl font-mono font-bold text-teal-800">
+          <input type="number" id="edit-fse-mesin" required min="0" class="soft-input w-full px-3 py-2 rounded-xl font-mono font-bold text-teal-800">
         </div>
       </div>
-
       <div>
-        <label class="block text-slate-700 font-semibold mb-1">Status Akun *</label>
+        <label class="block text-slate-700 font-semibold mb-1">Status Akun</label>
         <select id="edit-fse-status" class="soft-input w-full px-3 py-2 rounded-xl">
           <option value="Aktif">Aktif</option>
           <option value="Nonaktif">Nonaktif</option>
         </select>
       </div>
-
       <div class="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-200/80">
-        <button type="button" onclick="closeEditFSEModal()" class="px-4 py-2 rounded-xl bg-slate-100 text-slate-700 hover:bg-slate-200 transition font-medium">
-          Batal
-        </button>
-        <button type="submit" id="btn-save-edit-fse" class="soft-btn-primary font-semibold px-5 py-2 rounded-xl flex items-center gap-1.5">
-          <i class="fa-solid fa-save"></i>
-          <span>Simpan Perubahan</span>
-        </button>
+        <button type="button" onclick="closeEditFSEModal()" class="px-4 py-2 rounded-xl bg-slate-100 text-slate-700">Batal</button>
+        <button type="submit" class="soft-btn-primary font-semibold px-5 py-2 rounded-xl">Simpan Perubahan</button>
       </div>
     </form>
   </div>
 </div>
 
-<!-- MODAL: LIFECYCLE STATUS UPDATE -->
-<div id="modal-status-action" class="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4 z-50 hidden">
-  <div class="bg-white/95 backdrop-blur-xl w-full max-w-md p-6 rounded-2xl border border-white shadow-2xl relative">
-    <h3 class="font-bold text-base text-slate-800 mb-2 flex items-center gap-2">
-      <i class="fa-solid fa-arrows-spin text-teal-600"></i>
-      <span>Pembaruan Lifecycle Status Tiket</span>
-    </h3>
-    <p class="text-xs text-slate-600 mb-4">
-      Tiket: <span id="status-modal-ticket-id" class="font-mono text-teal-700 font-bold"></span>
-    </p>
-
-    <div class="space-y-3 text-xs">
+<div id="fse-modal-create-pm" class="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4 z-50 hidden">
+  <div class="bg-white/95 backdrop-blur-xl w-full max-w-sm max-h-[90vh] overflow-y-auto p-5 rounded-2xl border border-white shadow-2xl relative text-xs">
+    <button onclick="closeFSECreatePMModal()" class="absolute top-4 right-4 text-slate-400 hover:text-slate-600 text-lg"><i class="fa-solid fa-xmark"></i></button>
+    <h4 class="font-bold text-slate-800 text-sm mb-2"><i class="fa-solid fa-tools text-teal-600 mr-1.5"></i>Buat Laporan PM Baru</h4>
+    <form id="fse-pm-form" onsubmit="handleFSECreatePMSubmit(event)" class="space-y-3">
       <div>
-        <label class="block text-slate-700 font-semibold mb-1">Aksi Status Baru *</label>
-        <select id="select-new-status" class="soft-input w-full px-3 py-2 rounded-xl">
-          <option value="Respon">Respon (Monitoring acknowledgement)</option>
-          <option value="Appointment">Appointment (Jadwal ke Lokasi)</option>
-          <option value="Handling">Handling (FSE sedang di lokasi)</option>
-          <option value="Re-Appointment">Re-Appointment (Janjian ulang setelah ambil spare part)</option>
-          <option value="Take a Part">Take a Part (Pergantian sparepart ATM)</option>
-          <option value="Solving">Solving (Masalah selesai diatasi FSE)</option>
-          <option value="Closed">Closed (Verifikasi Monitoring & Wajib Kirim Dokumen)</option>
-          <option value="Cancel">Cancel (Batalkan tiket)</option>
-        </select>
-      </div>
-
-      <div>
-        <label class="block text-slate-700 font-semibold mb-1">Catatan Tambahan (Opsional)</label>
-        <textarea id="input-status-note" rows="2" placeholder="Keterangan perbaikan, jadwal appointment, atau sparepart..." class="soft-input w-full px-3 py-2 rounded-xl"></textarea>
-      </div>
-
-      <div class="flex items-center justify-end gap-3 pt-3">
-        <button type="button" onclick="closeStatusModal()" class="px-4 py-2 rounded-xl bg-slate-100 text-slate-700 hover:bg-slate-200 transition font-medium">
-          Batal
-        </button>
-        <button type="button" onclick="confirmStatusUpdate()" class="soft-btn-primary font-semibold px-5 py-2 rounded-xl">
-          Simpan Perubahan
-        </button>
-      </div>
-    </div>
-  </div>
-</div>
-
-<!-- MODAL: RE-APPOINTMENT MODAL (FSE JADWAL ULANG DENGAN PIC) -->
-<div id="modal-reappointment" class="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4 z-50 hidden">
-  <div class="bg-white/95 backdrop-blur-xl w-full max-w-sm p-5 rounded-2xl border border-white shadow-2xl relative text-xs">
-    <div class="flex items-center gap-2.5 mb-3 border-b border-slate-200 pb-2.5">
-      <div class="w-8 h-8 rounded-lg bg-teal-50 text-teal-700 flex items-center justify-center">
-        <i class="fa-solid fa-calendar-plus text-sm"></i>
+        <label class="block text-slate-700 font-semibold mb-1">Bank *</label>
+        <select id="fse-pm-bank" required onchange="filterFSEPMachinesByBank()" class="soft-input w-full px-3 py-2 rounded-xl"></select>
       </div>
       <div>
-        <h4 class="font-bold text-slate-800">Re-Appointment dengan PIC</h4>
-        <p class="text-[10px] text-slate-500">Jadwal ulang kunjungan setelah ambil sparepart</p>
-      </div>
-    </div>
-
-    <form onsubmit="handleReAppointmentSubmit(event)" class="space-y-3">
-      <input type="hidden" id="reappoint-ticket-id">
-      <div>
-        <label class="block text-slate-700 font-semibold mb-1">Tanggal &amp; Waktu Janjian Baru *</label>
-        <input type="datetime-local" id="reappoint-datetime" required class="soft-input w-full px-3 py-2 rounded-xl">
+        <label class="block text-slate-700 font-semibold mb-1">Serial Number *</label>
+        <select id="fse-pm-sn" required class="soft-input w-full px-3 py-2 rounded-xl"></select>
       </div>
       <div>
-        <label class="block text-slate-700 font-semibold mb-1">Nama PIC Bank / Catatan Part *</label>
-        <textarea id="reappoint-note" rows="2" required placeholder="Contoh: Sudah ambil roller feed baru, janjian kembali besok jam 09.00 dgn Bpk. Joko" class="soft-input w-full px-3 py-2 rounded-xl"></textarea>
+        <label class="block text-slate-700 font-semibold mb-1">Deskripsi Rencana PM *</label>
+        <textarea id="fse-pm-problem" required rows="3" placeholder="Pembersihan modul dispenser, test print..." class="soft-input w-full px-3 py-2 rounded-xl"></textarea>
       </div>
-      <div class="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
-        <button type="button" onclick="closeReAppointmentModal()" class="px-3 py-1.5 rounded-lg bg-slate-100 text-slate-600 font-medium">Batal</button>
-        <button type="submit" class="soft-btn-primary px-4 py-1.5 rounded-lg font-semibold">Simpan Jadwal</button>
-      </div>
+      <button type="submit" class="w-full soft-btn-primary font-semibold px-4 py-2 rounded-xl">Terbitkan Tiket PM</button>
     </form>
   </div>
 </div>
 
-<!-- MODAL: VERIFIKASI PENERIMAAN HARDCOPY (ROLE ADMIN) -->
 <div id="modal-receive-hardcopy" class="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4 z-50 hidden">
   <div class="bg-white/95 backdrop-blur-xl w-full max-w-sm p-5 rounded-2xl border border-white shadow-2xl relative text-xs">
-    <div class="flex items-center gap-2.5 mb-3 border-b border-slate-200 pb-2.5">
-      <div class="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-700 flex items-center justify-center">
-        <i class="fa-solid fa-file-circle-check text-sm"></i>
-      </div>
-      <div>
-        <h4 class="font-bold text-slate-800">Verifikasi Berkas Hardcopy</h4>
-        <p class="text-[10px] text-slate-500">Konfirmasi penerimaan dokumen fisik di kantor</p>
-      </div>
-    </div>
-
-    <p class="text-slate-600 mb-3">
-      Apakah Anda mengonfirmasi bahwa berkas fisik/hardcopy untuk Tiket <b id="rcv-modal-ticket-id" class="text-teal-700 font-mono"></b> sudah diterima dengan lengkap?
-    </p>
-
-    <div class="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
-      <button type="button" onclick="closeReceiveHardcopyModal()" class="px-3 py-1.5 rounded-lg bg-slate-100 text-slate-600 font-medium">Batal</button>
-      <button type="button" onclick="confirmReceiveHardcopyAction()" class="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-1.5 rounded-lg font-semibold shadow-sm">
-        <i class="fa-solid fa-check mr-1"></i> File Diterima
-      </button>
+    <h4 class="font-bold text-slate-800 mb-2"><i class="fa-solid fa-file-circle-check text-emerald-600 mr-1"></i>Verifikasi Berkas Hardcopy</h4>
+    <p class="text-slate-600 mb-4">Konfirmasi berkas fisik/hardcopy untuk Tiket <b id="rcv-modal-ticket-id" class="text-teal-700 font-mono"></b> sudah diterima kantor?</p>
+    <div class="flex items-center justify-end gap-2">
+      <button onclick="closeReceiveHardcopyModal()" class="px-3 py-1.5 rounded-lg bg-slate-100 text-slate-600">Batal</button>
+      <button onclick="confirmReceiveHardcopyAction()" class="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-1.5 rounded-lg font-semibold shadow-sm">File Diterima</button>
     </div>
   </div>
 </div>
 
-<!-- TOAST NOTIFICATION -->
 <div id="toast-notification" class="fixed bottom-6 right-6 max-w-sm bg-white/95 backdrop-blur-md p-4 rounded-2xl border border-slate-200 shadow-xl flex items-start gap-3 z-50 transform transition-all duration-300 translate-y-20 opacity-0 pointer-events-none">
-  <div id="toast-icon" class="text-teal-600 text-lg mt-0.5">
-    <i class="fa-solid fa-circle-check"></i>
-  </div>
+  <div id="toast-icon" class="text-teal-600 text-lg mt-0.5"><i class="fa-solid fa-circle-check"></i></div>
   <div class="flex-1">
     <h4 id="toast-title" class="font-bold text-xs text-slate-800">Notifikasi</h4>
-    <p id="toast-message" class="text-[11px] text-slate-500 mt-0.5">Operasi berhasil dilaksanakan.</p>
+    <p id="toast-message" class="text-[11px] text-slate-500 mt-0.5">Operasi berhasil.</p>
   </div>
 </div>

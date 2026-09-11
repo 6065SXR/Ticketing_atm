@@ -1,29 +1,45 @@
 <!-- SECTION: DATABASE CUSTOMER -->
 <section id="sec-DatabaseCustomer" class="view-section space-y-4 hidden">
   <div class="soft-card-panel p-5">
-    <div class="flex items-center justify-between mb-4">
-      <h3 class="font-bold text-sm text-slate-800 flex items-center gap-2">
-        <i class="fa-solid fa-landmark text-amber-600"></i>
-        <span>Database Customer (Mitra Perbankan)</span>
-      </h3>
-      <span class="text-xs text-slate-500">Data PIC & Kontak Bank</span>
+    
+    <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-4 pb-3 border-b border-slate-200/60">
+      <div>
+        <h3 class="font-bold text-sm text-slate-800 flex items-center gap-2">
+          <i class="fa-solid fa-landmark text-amber-600"></i>
+          <span>Database Customer (Mitra Perbankan)</span>
+        </h3>
+        <p class="text-xs text-slate-500 mt-0.5">Daftar Bank Mitra, Alamat Kantor & Kontak PIC Operasional</p>
+      </div>
+
+      <div class="flex items-center gap-2.5 w-full sm:w-auto">
+        <button onclick="openCSVImportModal('Customers')" class="px-3.5 py-2 rounded-xl bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 text-xs font-semibold flex items-center gap-1.5 shadow-sm transition">
+          <i class="fa-solid fa-file-csv text-teal-600"></i>
+          <span>Import CSV Bank</span>
+        </button>
+      </div>
     </div>
+
     <div class="overflow-x-auto rounded-xl border border-slate-200 bg-white/60">
       <table class="w-full text-left text-xs text-slate-600">
         <thead class="text-[10px] uppercase bg-slate-100/80 text-slate-700 border-b border-slate-200">
           <tr>
-            <th class="p-3 font-semibold">ID Customer</th>
-            <th class="p-3 font-semibold">Nama Bank</th>
-            <th class="p-3 font-semibold">Kontak PIC</th>
-            <th class="p-3 font-semibold">Telepon PIC</th>
-            <th class="p-3 font-semibold">Email Bank</th>
-            <th class="p-3 font-semibold">Alamat Kantor</th>
+            <th class="p-3 font-semibold whitespace-nowrap">ID Customer</th>
+            <th class="p-3 font-semibold whitespace-nowrap">Nama Bank</th>
+            <th class="p-3 font-semibold whitespace-nowrap">Kontak PIC</th>
+            <th class="p-3 font-semibold whitespace-nowrap">Telepon PIC</th>
+            <th class="p-3 font-semibold whitespace-nowrap">Email Bank</th>
+            <th class="p-3 font-semibold whitespace-nowrap">Alamat Kantor</th>
           </tr>
         </thead>
         <tbody id="customers-table-body" class="divide-y divide-slate-100">
-          <!-- Injected via JS -->
+          <tr>
+            <td colspan="6" class="text-center py-6 text-slate-400 text-xs font-mono">
+              <i class="fa-solid fa-spinner fa-spin text-teal-600 mr-2"></i>Memuat daftar customer bank...
+            </td>
+          </tr>
         </tbody>
       </table>
     </div>
+
   </div>
 </section>

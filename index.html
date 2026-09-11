@@ -2,13 +2,15 @@
 <html lang="id">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>ATM Ticketing System - Hardiansyah Fam</title>
   
   <!-- Tailwind CSS CDN -->
   <script src="https://cdn.tailwindcss.com"></script>
   <!-- Font Awesome CDN -->
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <!-- html2canvas for Timeline Evidence Screenshots -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
   <!-- Google Fonts: Plus Jakarta Sans & Inter -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -160,7 +162,6 @@
       display: none !important;
     }
 
-    /* Custom Scrollbar */
     ::-webkit-scrollbar {
       width: 6px;
       height: 6px;
@@ -187,7 +188,6 @@
   <!-- VIEW 1.5: DEDICATED MOBILE PORTAL FOR ROLE FSE -->
   <?!= include('view_fse_portal'); ?>
 
-  <!-- VIEW 2: MAIN SHELL (MONITORING & ADMIN DESKTOP/TABLET) -->
   <div id="app-viewport" class="frosted-glass-slab w-full max-w-[1540px] flex flex-col lg:flex-row min-h-[92vh] overflow-hidden hidden">
     
     <aside id="app-sidebar" class="w-full lg:w-72 p-3 sm:p-5 flex flex-col border-b lg:border-b-0 lg:border-r border-white/60 shrink-0 bg-white/30 transition-all duration-300">
@@ -215,7 +215,6 @@
         </button>
       </div>
 
-      <!-- Navigasi Menu Desktop & Mobile Slider -->
       <nav class="mobile-nav-slider flex flex-row lg:flex-col overflow-x-auto lg:overflow-x-hidden lg:overflow-y-auto gap-2 lg:gap-1.5 p-2 lg:p-0 rounded-2xl lg:rounded-none bg-white/60 lg:bg-transparent border lg:border-none border-white/80 shadow-sm lg:shadow-none shrink-0 lg:flex-1">
         <a href="javascript:void(0)" onclick="navigateTo('Dashboard')" id="nav-Dashboard" title="Dashboard" class="soft-nav-pill active flex items-center gap-2.5 lg:gap-3.5 px-3 lg:px-3.5 py-2 lg:py-2.5 text-xs font-medium shrink-0">
           <i class="fa-solid fa-gauge w-4 text-center shrink-0"></i>
@@ -255,7 +254,6 @@
         </a>
       </nav>
 
-      <!-- User Profile & Logout Action -->
       <div class="mt-2 lg:mt-4 pt-2 lg:pt-3 border-t border-slate-200/60 hidden lg:block">
         <div class="sidebar-user-box flex items-center gap-2.5 p-1 rounded-xl">
           <div id="user-avatar-badge" class="w-9 h-9 rounded-xl bg-teal-50 border border-teal-200 flex items-center justify-center text-teal-700 font-bold text-xs shadow-sm shrink-0">
@@ -274,7 +272,6 @@
 
     <main class="flex-1 flex flex-col p-4 sm:p-6 lg:p-8 min-w-0 overflow-y-auto">
       
-      <!-- TOP STATUS HEADER BAR -->
       <header class="soft-card-panel px-4 sm:px-6 py-3 sm:py-4 flex flex-wrap items-center justify-between gap-3 sm:gap-4 mb-5">
         <div class="flex items-center gap-3">
           <div class="w-10 h-10 rounded-xl bg-teal-50 border border-teal-200/80 flex items-center justify-center text-teal-700 shrink-0">
@@ -287,13 +284,11 @@
         </div>
 
         <div class="flex items-center gap-2.5 sm:gap-3">
-          <!-- Live Clock -->
           <div class="hidden sm:flex items-center gap-2 px-3.5 py-2 rounded-xl bg-white/80 border border-slate-200 text-xs font-mono text-slate-700 shadow-sm">
             <i class="fa-regular fa-clock text-teal-600"></i>
             <span id="live-clock">--:--:-- WIB</span>
           </div>
 
-          <!-- Quick Action: Create Ticket -->
           <button onclick="openCreateTicketModal()" class="soft-btn-primary text-xs font-semibold px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl flex items-center gap-2 shadow-sm">
             <i class="fa-solid fa-plus text-[11px]"></i>
             <span>BUAT TIKET</span>

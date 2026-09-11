@@ -1,29 +1,47 @@
 <!-- SECTION: DATABASE MESIN -->
 <section id="sec-DatabaseMesin" class="view-section space-y-4 hidden">
   <div class="soft-card-panel p-5">
-    <div class="flex items-center justify-between mb-4">
-      <h3 class="font-bold text-sm text-slate-800 flex items-center gap-2">
-        <i class="fa-solid fa-server text-teal-600"></i>
-        <span>Database Mesin ATM (Asset Register)</span>
-      </h3>
-      <span class="text-xs text-slate-500">Total ATM Terdaftar</span>
+    
+    <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-4 pb-3 border-b border-slate-200/60">
+      <div>
+        <h3 class="font-bold text-sm text-slate-800 flex items-center gap-2">
+          <i class="fa-solid fa-server text-teal-600"></i>
+          <span>Database Mesin ATM (Asset Register)</span>
+        </h3>
+        <p class="text-xs text-slate-500 mt-0.5">Inventaris Mesin ATM Perbankan & FSE Penanggung Jawab Kelolaan</p>
+      </div>
+
+      <div class="flex items-center gap-2.5 w-full sm:w-auto">
+        <!-- Tombol Import CSV Mesin dengan Proteksi Anti-Duplikasi SN -->
+        <button onclick="openCSVImportModal('Machines')" class="px-3.5 py-2 rounded-xl bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 text-xs font-semibold flex items-center gap-1.5 shadow-sm transition">
+          <i class="fa-solid fa-file-csv text-teal-600"></i>
+          <span>Import CSV Mesin</span>
+        </button>
+      </div>
     </div>
+
     <div class="overflow-x-auto rounded-xl border border-slate-200 bg-white/60">
       <table class="w-full text-left text-xs text-slate-600">
         <thead class="text-[10px] uppercase bg-slate-100/80 text-slate-700 border-b border-slate-200">
           <tr>
-            <th class="p-3 font-semibold">ID Mesin</th>
-            <th class="p-3 font-semibold">Serial Number</th>
-            <th class="p-3 font-semibold">Bank Pemilik</th>
-            <th class="p-3 font-semibold">Lokasi ATM</th>
-            <th class="p-3 font-semibold">Tipe / Merk</th>
-            <th class="p-3 font-semibold">Status</th>
+            <th class="p-3 font-semibold whitespace-nowrap">ID Mesin</th>
+            <th class="p-3 font-semibold whitespace-nowrap">Serial Number</th>
+            <th class="p-3 font-semibold whitespace-nowrap">Bank Pemilik</th>
+            <th class="p-3 font-semibold whitespace-nowrap">Lokasi ATM</th>
+            <th class="p-3 font-semibold whitespace-nowrap">Tipe / Merk</th>
+            <th class="p-3 font-semibold whitespace-nowrap">Status</th>
+            <th class="p-3 font-semibold whitespace-nowrap text-teal-800">FSE Pengelola</th>
           </tr>
         </thead>
         <tbody id="machines-table-body" class="divide-y divide-slate-100">
-          <!-- Injected via JS -->
+          <tr>
+            <td colspan="7" class="text-center py-6 text-slate-400 text-xs font-mono">
+              <i class="fa-solid fa-spinner fa-spin text-teal-600 mr-2"></i>Memuat data mesin ATM...
+            </td>
+          </tr>
         </tbody>
       </table>
     </div>
+
   </div>
 </section>

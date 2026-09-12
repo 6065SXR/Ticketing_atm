@@ -4,7 +4,10 @@
  * Fungsi: Inisialisasi Database, Safe Migrate (Tanpa menghapus data),
  *         Pencatatan Milestone Downtime, Pending Pause Timestamps,
  *         Audit Dispatcher, PIC Bank, Kolom Mandiri No_FE_Report,
- *         serta Kolom Pelacakan Ekspedisi Pengiriman Dokumen Fisik.
+ *         Kolom Pelacakan Ekspedisi Pengiriman Dokumen Fisik,
+ *         Metrik SLA Tiket Corrective Maintenance (CM),
+ *         Skema Sheet Spareparts untuk Log Pergantian Part,
+ *         serta Skema Sheet Baru Data_PM untuk Siklus Perawatan Berkala ATM.
  */
 
 var SHEET_NAMES = {
@@ -14,7 +17,9 @@ var SHEET_NAMES = {
   ENGINEERS: 'Engineers',
   COUNTER: 'Counter_Ticket',
   USERS: 'Users',
-  FSE: 'FSE'
+  FSE: 'FSE',
+  SPAREPARTS: 'Spareparts',
+  DATA_PM: 'Data_PM'
 };
 
 var HEADERS = {
@@ -28,7 +33,8 @@ var HEADERS = {
     'Dispatcher', 'Note_Dispatcher', 'PIC_Bank',
     'Waktu_Pending', 'Alasan_Pending', 'Jadwal_Lanjutan_Pending',
     'No_FE_Report', 'Foto_FE_Report', 'Foto_Cancel_Evidence', 'Foto_Pending_Evidence',
-    'Metode_Pengiriman', 'Nama_Ekspedisi', 'No_Resi', 'Jenis_Pengiriman'
+    'Metode_Pengiriman', 'Nama_Ekspedisi', 'No_Resi', 'Jenis_Pengiriman',
+    'Durasi_Respon_Menit', 'Total_Handling_Menit', 'Status_SLA_CM'
   ],
   Customers: [
     'ID_Customer', 'Nama_Bank', 'Kontak_PIC', 
@@ -53,6 +59,16 @@ var HEADERS = {
     'User_ID', 'Nama_Lengkap', 'No_HP', 'Password', 
     'Role', 'Wilayah_Tugas', 'Status_Akun', 'Jumlah_Kelolaan_Mesin', 
     'Created_By', 'Created_At'
+  ],
+  Spareparts: [
+    'ID_Tiket', 'Bank', 'ID_Mesin', 'SN_Mesin', 'Lokasi',
+    'PN_Part_Bad', 'SN_Part_Bad', 'PN_Part_Good', 'SN_Part_Good',
+    'Nama_Engineer', 'Waktu_Input'
+  ],
+  Data_PM: [
+    'ID_PM', 'Bank', 'ID_Mesin', 'Serial_Number', 'Lokasi_ATM',
+    'Periode', 'Tahun', 'Bulan_Target', 'Status_PM', 'Tanggal_Realisasi',
+    'No_Tiket_PM', 'Engineer_PIC', 'Keterangan'
   ]
 };
 
@@ -151,18 +167,33 @@ function populateInitialDummyData(sheet, sheetName, ss) {
     sheet.getRange(2, 1, 1, 2).setValues(counterData);
   }
 
+  if (sheetName === SHEET_NAMES.SPAREPARTS) {
+    var sparepartsSample = [
+      [
+        yymmdd + '-0002', 'Bank Mandiri', 'ATM-MDR-01', 'SN-MDR-44011', 'Plaza Senayan Ground Floor',
+        'PN-FEED-091', 'SN-BAD-77112', 'PN-FEED-091', 'SN-GOOD-99881',
+        'Fajar Ramadhan', nowFormatted
+      ]
+    ];
+    sheet.getRange(2, 1, sparepartsSample.length, sparepartsSample[0].length).setValues(sparepartsSample);
+  }
+
   if (sheetName === SHEET_NAMES.TICKETS) {
     var hist1 = JSON.stringify([
-      { status: 'Open', time: dateStr + ' 08:15:20', note: 'Tiket diterbitkan oleh Dispatcher', user: 'Monitoring' },
+      { status: 'Assign', time: dateStr + ' 08:15:20', note: 'Tiket diterbitkan oleh Dispatcher', user: 'Monitoring' },
+      { status: 'Respon', time: dateStr + ' 08:18:10', note: 'Tiket direspon oleh teknisi FSE', user: 'Rizky Hardiansyah' },
       { status: 'Handling', time: dateStr + ' ' + timeStr, note: 'Tiba di lokasi dan mulai inspeksi', user: 'Rizky Hardiansyah' }
     ]);
     var hist2 = JSON.stringify([
-      { status: 'Open', time: dateStr + ' 09:30:10', note: 'PM Rutin Kuartal 3', user: 'Monitoring' },
+      { status: 'Assign', time: dateStr + ' 09:30:10', note: 'Tiket diterbitkan oleh Dispatcher', user: 'Monitoring' },
+      { status: 'Respon', time: dateStr + ' 09:32:00', note: 'Tiket direspon teknisi', user: 'Fajar Ramadhan' },
+      { status: 'Handling', time: dateStr + ' 09:50:00', note: 'Mulai pengerjaan PM', user: 'Fajar Ramadhan' },
       { status: 'Solving', time: dateStr + ' 11:00:00', note: '[No. FE: FE-2026-0911-001] Pembersihan dan kalibrasi selesai', user: 'Fajar Ramadhan', noFeReport: 'FE-2026-0911-001' },
       { status: 'Closed', time: dateStr + ' 11:30:00', note: 'Verifikasi monitoring selesai', user: 'Monitoring' }
     ]);
     var hist3 = JSON.stringify([
-      { status: 'Open', time: dateStr + ' 10:05:44', note: 'Tiket diterbitkan', user: 'Monitoring' },
+      { status: 'Assign', time: dateStr + ' 10:05:44', note: 'Tiket diterbitkan', user: 'Monitoring' },
+      { status: 'Respon', time: dateStr + ' 10:08:20', note: 'Tiket direspon', user: 'Dimas Kurniawan' },
       { status: 'Appointment', time: dateStr + ' ' + timeStr, note: 'Permintaan: FSE | Janjian jam 13:00', user: 'Dimas Kurniawan' }
     ]);
 
@@ -172,30 +203,33 @@ function populateInitialDummyData(sheet, sheetName, ss) {
         dateStr, '08:15:20', 'Corrective Maintenance (CM)', 'Rizky Hardiansyah',
         'Mesin Card Reader error code 42 (Card Jammed)', 'Prioritas tinggi, nasabah antre.', 'Handling', dateStr + ' ' + timeStr,
         '', 'Belum Dikirim', '', '',
-        dateStr + ' 08:20:00', dateStr + ' 08:35:00', dateStr + ' 09:00:00', dateStr + ' ' + timeStr, '', '', hist1,
+        dateStr + ' 08:18:10', dateStr + ' 08:35:00', dateStr + ' 09:00:00', dateStr + ' ' + timeStr, '', '', hist1,
         'Monitoring Officer', 'Mohon respon segera karena antrean ramai', 'Bambang Sudibyo',
         '', '', '', '', '', '', '',
-        '', '', '', ''
+        '', '', '', '',
+        3, 45, 'In Progress'
       ],
       [
         yymmdd + '-0002', 'Bank Mandiri', 'SN-MDR-44011', 'ATM-MDR-01',
         dateStr, '09:30:10', 'Preventive Maintenance (PM)', 'Fajar Ramadhan',
         'Jadwal pembersihan modul dispenser & check sensor', 'PM Rutin Kuartal 3', 'Closed', dateStr + ' ' + timeStr,
         dateStr + ' 11:30:00', 'Belum Dikirim', '', '',
-        dateStr + ' 09:35:00', dateStr + ' 09:50:00', dateStr + ' 10:15:00', dateStr + ' 10:20:00', '', dateStr + ' 11:00:00', hist2,
+        dateStr + ' 09:32:00', dateStr + ' 09:50:00', dateStr + ' 10:15:00', dateStr + ' 10:20:00', '', dateStr + ' 11:00:00', hist2,
         'Monitoring Officer', 'Pemeriksaan rutin modul dispenser', 'Siti Rahmawati',
         '', '', '', 'FE-2026-0911-001', '', '', '',
-        '', '', '', ''
+        '', '', '', '',
+        2, 70, 'Achieved'
       ],
       [
         yymmdd + '-0003', 'Bank Rakyat Indonesia (BRI)', 'SN-BRI-11055', 'ATM-BRI-01',
         dateStr, '10:05:44', 'Corrective Maintenance (CM)', 'Dimas Kurniawan',
         'Receipt Printer Out of Paper & Cutter Jam', 'Kertas cadangan dibawa FSE', 'Appointment', dateStr + ' ' + timeStr,
         '', 'Belum Dikirim', '', '',
-        dateStr + ' 10:10:00', dateStr + ' ' + timeStr, '', '', '', '', hist3,
+        dateStr + ' 10:08:20', dateStr + ' ' + timeStr, '', '', '', '', hist3,
         'Monitoring Officer', 'Koordinasikan dengan PIC Pasar Tanah Abang', 'Eko Prasetyo',
         '', '', '', '', '', '', '',
-        '', '', '', ''
+        '', '', '', '',
+        3, 0, 'In Progress'
       ]
     ];
     sheet.getRange(2, 1, ticketsData.length, ticketsData[0].length).setValues(ticketsData);

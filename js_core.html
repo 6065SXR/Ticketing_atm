@@ -1,0 +1,767 @@
+<!-- ========================================================
+     JS CORE: State Global, Autentikasi, Sesi, Utilitas Bersama,
+     Routing, Notifikasi Toast, & Modal Universal
+     ======================================================== -->
+<script>
+  var currentSection = 'Dashboard';
+  var currentPage = 1;
+  var pageSize = 10;
+  var totalPages = 1;
+  var totalItems = 0;
+  var searchDebounceTimer = null;
+  var isSidebarCollapsed = false;
+
+  var currentUser = null;
+  var currentFSETab = 'dashboard';
+  var activeActionTicketId = null;
+
+  var SESSION_TIMEOUT_MS = 2 * 60 * 60 * 1000;
+
+  var cachedDropdowns = {
+    banks: [],
+    machines: [],
+    engineers: []
+  };
+
+  var currentTicketsList = [];
+  var currentPMList = [];
+  var currentFSEList = [];
+  var cachedFSEMachinesList = [];
+  var selectedDocumentIds = [];
+
+  window.onload = function() {
+    startLiveClock();
+    initSessionTracking();
+    checkSavedSession();
+  };
+
+  function initSessionTracking() {
+    var activityEvents = ['mousedown', 'mousemove', 'keydown', 'scroll', 'touchstart'];
+    for (var i = 0; i < activityEvents.length; i++) {
+      document.addEventListener(activityEvents[i], recordUserActivity, { passive: true });
+    }
+
+    setInterval(function() {
+      if (currentUser) {
+        var lastAct = parseInt(localStorage.getItem('atm_last_activity'), 10) || Date.now();
+        if (Date.now() - lastAct > SESSION_TIMEOUT_MS) {
+          handleAutoLogout();
+        }
+      }
+    }, 15000);
+  }
+
+  function recordUserActivity() {
+    if (currentUser) {
+      localStorage.setItem('atm_last_activity', Date.now().toString());
+    }
+  }
+
+  function checkSavedSession() {
+    try {
+      var savedUserJson = localStorage.getItem('atm_user_session');
+      var lastAct = parseInt(localStorage.getItem('atm_last_activity'), 10);
+
+      if (savedUserJson && lastAct) {
+        if (Date.now() - lastAct < SESSION_TIMEOUT_MS) {
+          var userObj = JSON.parse(savedUserJson);
+          recordUserActivity();
+          executeLogin(userObj, true);
+          return;
+        } else {
+          localStorage.removeItem('atm_user_session');
+          localStorage.removeItem('atm_last_activity');
+        }
+      }
+    } catch (e) {
+      console.error('Session check error:', e);
+    }
+  }
+
+  function handleAutoLogout() {
+    currentUser = null;
+    localStorage.removeItem('atm_user_session');
+    localStorage.removeItem('atm_last_activity');
+    document.getElementById('app-viewport').classList.add('hidden');
+    document.getElementById('fse-mobile-viewport').classList.add('hidden');
+    document.getElementById('login-view').classList.remove('hidden');
+    showToast('Sesi Berakhir', 'Akun otomatis logout karena tidak ada aktivitas selama 2 jam.', 'error');
+  }
+
+  function togglePasswordVisibility() {
+    var passInput = document.getElementById('login-password');
+    var eyeIcon = document.getElementById('eye-icon');
+    if (!passInput) return;
+
+    if (passInput.type === 'password') {
+      passInput.type = 'text';
+      if (eyeIcon) eyeIcon.className = 'fa-regular fa-eye-slash absolute right-3.5 top-3 text-teal-600 cursor-pointer';
+    } else {
+      passInput.type = 'password';
+      if (eyeIcon) eyeIcon.className = 'fa-regular fa-eye absolute right-3.5 top-3 text-slate-400 cursor-pointer hover:text-slate-600';
+    }
+  }
+
+  function quickLoginDemo(role) {
+    var demoCredentials = {
+      monitoring: { hp: '081200000002', pass: 'monitoring123' },
+      fse: { hp: '081299881122', pass: 'fse123' },
+      admin: { hp: '081100000001', pass: 'admin123' }
+    };
+
+    var target = demoCredentials[role] || demoCredentials.monitoring;
+    document.getElementById('login-username').value = target.hp;
+    document.getElementById('login-password').value = target.pass;
+
+    handleLoginProcess(target.hp, target.pass, role);
+  }
+
+  function handleLoginSubmit(event) {
+    event.preventDefault();
+    var inputHp = document.getElementById('login-username').value.trim();
+    var inputPass = document.getElementById('login-password').value.trim();
+
+    handleLoginProcess(inputHp, inputPass);
+  }
+
+  function handleLoginProcess(hp, pass, intendedRole) {
+    var btn = document.getElementById('btn-login-submit');
+    var btnText = document.getElementById('btn-login-text');
+    if (btn) btn.disabled = true;
+    if (btnText) btnText.innerText = 'Memverifikasi Kredensial...';
+
+    if (typeof google !== 'undefined' && google.script && google.script.run) {
+      google.script.run
+        .withSuccessHandler(function(res) {
+          if (btn) btn.disabled = false;
+          if (btnText) btnText.innerText = 'Masuk ke Sistem';
+
+          if (res && res.status === 'success') {
+            executeLogin(res.user);
+          } else {
+            showToast('Gagal Masuk', res ? res.message : 'Kredensial tidak cocok', 'error');
+          }
+        })
+        .withFailureHandler(function(err) {
+          if (btn) btn.disabled = false;
+          if (btnText) btnText.innerText = 'Masuk ke Sistem';
+          showToast('Error Server', 'Kendala backend: ' + err, 'error');
+        })
+        .authenticateUser(hp, pass);
+    } else {
+      if (btn) btn.disabled = false;
+      if (btnText) btnText.innerText = 'Masuk ke Sistem';
+
+      var cleanHp = String(hp || '').replace(/[^0-9]/g, '');
+      var isFSEHp = (
+        intendedRole === 'fse' ||
+        cleanHp === '081299881122' || 
+        cleanHp === '81299881122' ||
+        cleanHp === '081377665544' ||
+        cleanHp === '081733445566' ||
+        String(pass || '').toLowerCase().indexOf('fse') !== -1
+      );
+
+      var fallbackUser = {
+        userId: isFSEHp ? 'USR-003' : 'USR-001',
+        name: isFSEHp ? 'Rizky Hardiansyah' : 'Monitoring Officer',
+        noHp: hp,
+        roleKey: isFSEHp ? 'fse' : 'monitoring',
+        roleTitle: isFSEHp ? 'Field Service Engineer' : 'Monitoring Officer',
+        initials: isFSEHp ? 'FS' : 'MO',
+        wilayah: 'Jakarta Pusat & Barat',
+        indicator: isFSEHp ? 'FIELD SERVICE OPS' : 'NOC ATM MONITORING'
+      };
+      executeLogin(fallbackUser);
+    }
+  }
+
+  function executeLogin(userObj, isSessionRestored) {
+    if (!userObj) return;
+
+    var rKey = String(userObj.roleKey || userObj.role || '').toLowerCase().trim();
+    var rTitle = String(userObj.roleTitle || '').toLowerCase().trim();
+
+    var isFSE = (
+      rKey === 'fse' ||
+      rKey.indexOf('fse') !== -1 ||
+      rKey.indexOf('engineer') !== -1 ||
+      rKey.indexOf('teknisi') !== -1 ||
+      rKey.indexOf('field') !== -1 ||
+      rTitle.indexOf('fse') !== -1 ||
+      rTitle.indexOf('engineer') !== -1 ||
+      rTitle.indexOf('teknisi') !== -1
+    );
+
+    userObj.roleKey = isFSE ? 'fse' : ((rKey.indexOf('admin') !== -1) ? 'admin' : 'monitoring');
+
+    currentUser = userObj;
+    localStorage.setItem('atm_user_session', JSON.stringify(userObj));
+    localStorage.setItem('atm_last_activity', Date.now().toString());
+
+    document.getElementById('login-view').classList.add('hidden');
+
+    if (isFSE) {
+      document.getElementById('app-viewport').classList.add('hidden');
+      document.getElementById('fse-mobile-viewport').classList.remove('hidden');
+
+      var fseBarName = document.getElementById('fse-bar-name');
+      var fseHeroGreeting = document.getElementById('fse-hero-greeting');
+      var fseHeroWilayah = document.getElementById('fse-hero-wilayah');
+
+      if (fseBarName) fseBarName.innerText = userObj.name || 'Teknisi Lapangan';
+      if (fseHeroGreeting) fseHeroGreeting.innerText = 'Semangat Pagi, ' + (userObj.name ? userObj.name.split(' ')[0] : 'Teknisi') + '!';
+      if (fseHeroWilayah) fseHeroWilayah.innerHTML = '<i class="fa-solid fa-location-dot text-emerald-300 mr-1.5"></i>Area: ' + escapeHtml(userObj.wilayah || 'Jabodetabek');
+
+      loadDropdowns();
+      loadFSEPortalData();
+    } else {
+      document.getElementById('fse-mobile-viewport').classList.add('hidden');
+      document.getElementById('app-viewport').classList.remove('hidden');
+
+      document.getElementById('user-profile-name').innerText = userObj.name;
+      document.getElementById('user-profile-role').innerText = userObj.roleTitle;
+      document.getElementById('user-avatar-badge').innerText = userObj.initials;
+      document.getElementById('sidebar-role-indicator').innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse mr-1"></span><span class="truncate">' + escapeHtml(userObj.indicator) + '</span>';
+
+      applyRolePermissions(userObj);
+
+      loadDropdowns();
+      fetchTickets(1);
+      loadDashboardMetrics();
+      loadSectionAuxiliaryData('FSE');
+      loadSectionAuxiliaryData('DataPM');
+      loadSectionAuxiliaryData('DatabaseMesin');
+      loadSectionAuxiliaryData('DatabaseCustomer');
+      renderKPIScorecards();
+    }
+
+    if (!isSessionRestored) {
+      showToast('Login Berhasil', 'Selamat datang, ' + userObj.name, 'success');
+    }
+  }
+
+  function applyRolePermissions(userObj) {
+    var isMonitoring = (userObj && (userObj.roleKey === 'monitoring' || userObj.roleKey === 'admin'));
+    var fseBtnContainer = document.getElementById('container-monitoring-fse-action');
+
+    if (fseBtnContainer) {
+      if (isMonitoring) fseBtnContainer.classList.remove('hidden');
+      else fseBtnContainer.classList.add('hidden');
+    }
+  }
+
+  function handleLogout() {
+    currentUser = null;
+    localStorage.removeItem('atm_user_session');
+    localStorage.removeItem('atm_last_activity');
+    document.getElementById('app-viewport').classList.add('hidden');
+    document.getElementById('fse-mobile-viewport').classList.add('hidden');
+    document.getElementById('login-view').classList.remove('hidden');
+    showToast('Sesi Berakhir', 'Anda telah keluar dari aplikasi.', 'success');
+  }
+
+  function toggleSidebar() {
+    var sidebar = document.getElementById('app-sidebar');
+    var toggleIcon = document.getElementById('toggle-sidebar-icon');
+    isSidebarCollapsed = !isSidebarCollapsed;
+
+    if (isSidebarCollapsed) {
+      sidebar.classList.add('sidebar-collapsed');
+      toggleIcon.className = 'fa-solid fa-angles-right text-xs';
+    } else {
+      sidebar.classList.remove('sidebar-collapsed');
+      toggleIcon.className = 'fa-solid fa-bars-staggered text-xs';
+    }
+  }
+
+  function startLiveClock() {
+    setInterval(function() {
+      var now = new Date();
+      var h = ('0' + now.getHours()).slice(-2);
+      var m = ('0' + now.getMinutes()).slice(-2);
+      var s = ('0' + now.getSeconds()).slice(-2);
+      var timeStr = h + ':' + m + ':' + s + ' WIB';
+
+      var el1 = document.getElementById('live-clock');
+      var el2 = document.getElementById('fse-live-clock');
+      if (el1) el1.innerText = timeStr;
+      if (el2) el2.innerText = h + ':' + m + ' WIB';
+    }, 1000);
+  }
+
+  function navigateTo(sectionId) {
+    currentSection = sectionId;
+
+    var navItems = document.querySelectorAll('.soft-nav-pill');
+    for (var i = 0; i < navItems.length; i++) navItems[i].classList.remove('active');
+    var targetNav = document.getElementById('nav-' + sectionId);
+    if (targetNav) targetNav.classList.add('active');
+
+    var views = document.querySelectorAll('.view-section');
+    for (var j = 0; j < views.length; j++) views[j].classList.add('hidden');
+    var activeView = document.getElementById('sec-' + sectionId);
+    if (activeView) activeView.classList.remove('hidden');
+
+    var titleEl = document.getElementById('section-title');
+    var subTitleEl = document.getElementById('section-subtitle');
+
+    var metadata = {
+      Dashboard: { title: 'DASHBOARD MONITORING', sub: 'Live Telemetry & ATM Maintenance Incident Dispatcher' },
+      FSE: { title: 'DATA FIELD SERVICE ENGINEER', sub: 'Direktori & Status Ketersediaan Teknisi Lapangan' },
+      Ticket: { title: 'MANAJEMEN TIKET & DISPATCH', sub: 'Pelacakan Antrean Tiket dan Aksi Lifecycle Status' },
+      DataPM: { title: 'DATA PREVENTIVE MAINTENANCE (PM)', sub: 'Monitoring Jadwal & Riwayat Servis Berkala Mesin ATM' },
+      DatabaseMesin: { title: 'DATABASE MESIN ATM', sub: 'Registrasi Aset & Inventaris Mesin ATM Perbankan' },
+      DatabaseCustomer: { title: 'DATABASE CUSTOMER BANK', sub: 'Daftar Mitra Bank & Informasi Kontak PIC' },
+      ReportingFSE: { title: 'REPORTING PRODUKTIVITAS FSE', sub: 'Agregasi Penyelesaian Tiket & Analisis MTTR' },
+      SLAAchievement: { title: 'SERVICE LEVEL AGREEMENT (SLA)', sub: 'Kepatuhan Respon & Kecepatan Solving Insiden' },
+      KPIAchievement: { title: 'KPI ACHIEVEMENT SCORECARD', sub: 'Evaluasi Kinerja Petugas Monitoring & Tim FSE' }
+    };
+
+    if (titleEl && metadata[sectionId]) {
+      titleEl.innerText = metadata[sectionId].title;
+      subTitleEl.innerText = metadata[sectionId].sub;
+    }
+
+    if (sectionId === 'Ticket') fetchTickets(currentPage || 1);
+    else if (sectionId === 'Dashboard') { loadDashboardMetrics(); fetchTickets(1); }
+    else if (sectionId === 'DataPM') loadSectionAuxiliaryData('DataPM');
+    else if (sectionId === 'FSE') { loadSectionAuxiliaryData('FSE'); if (currentUser) applyRolePermissions(currentUser); }
+    else if (sectionId === 'DatabaseMesin') loadSectionAuxiliaryData('DatabaseMesin');
+    else if (sectionId === 'DatabaseCustomer') loadSectionAuxiliaryData('DatabaseCustomer');
+    else if (sectionId === 'ReportingFSE') loadSectionAuxiliaryData('ReportingFSE');
+  }
+
+  function loadDropdowns() {
+    if (typeof google !== 'undefined' && google.script && google.script.run) {
+      google.script.run
+        .withSuccessHandler(function(res) {
+          if (res && res.status === 'success') {
+            cachedDropdowns = res.data;
+            populateDropdownDOM();
+          }
+        })
+        .getDropdownData();
+    }
+  }
+
+  function populateDropdownDOM() {
+    var filterBank = document.getElementById('filter-bank');
+    if (filterBank && cachedDropdowns.banks) {
+      var optionsHtml = '<option value="ALL">Semua Bank</option>';
+      for (var i = 0; i < cachedDropdowns.banks.length; i++) {
+        optionsHtml += '<option value="' + escapeHtml(cachedDropdowns.banks[i]) + '">' + escapeHtml(cachedDropdowns.banks[i]) + '</option>';
+      }
+      filterBank.innerHTML = optionsHtml;
+    }
+
+    var inputBank = document.getElementById('input-bank');
+    if (inputBank && cachedDropdowns.banks) {
+      var formBankHtml = '<option value="">-- Pilih Bank Customer --</option>';
+      for (var j = 0; j < cachedDropdowns.banks.length; j++) {
+        formBankHtml += '<option value="' + escapeHtml(cachedDropdowns.banks[j]) + '">' + escapeHtml(cachedDropdowns.banks[j]) + '</option>';
+      }
+      inputBank.innerHTML = formBankHtml;
+    }
+
+    var inputEng = document.getElementById('input-engineer');
+    if (inputEng && cachedDropdowns.engineers) {
+      var engHtml = '<option value="">-- Pilih Field Service Engineer --</option>';
+      for (var k = 0; k < cachedDropdowns.engineers.length; k++) {
+        var eng = cachedDropdowns.engineers[k];
+        engHtml += '<option value="' + escapeHtml(eng.nama) + '">' + escapeHtml(eng.nama) + ' (' + escapeHtml(eng.wilayah || 'DKI') + ')</option>';
+      }
+      inputEng.innerHTML = engHtml;
+    }
+  }
+
+  function filterMachinesByBank() {
+    var selectedBank = document.getElementById('input-bank').value;
+    var snSelect = document.getElementById('input-serial-number');
+    var idMesinInput = document.getElementById('input-machine-id');
+    if (idMesinInput) idMesinInput.value = '';
+
+    var snHtml = '<option value="">-- Pilih Serial Number --</option>';
+    if (cachedDropdowns.machines) {
+      for (var i = 0; i < cachedDropdowns.machines.length; i++) {
+        var m = cachedDropdowns.machines[i];
+        if (!selectedBank || m.bank === selectedBank) {
+          snHtml += '<option value="' + escapeHtml(m.serialNumber) + '" data-id="' + escapeHtml(m.idMesin) + '">' + escapeHtml(m.serialNumber) + ' - ' + escapeHtml(m.lokasi) + '</option>';
+        }
+      }
+    }
+    if (snSelect) snSelect.innerHTML = snHtml;
+  }
+
+  function onSerialNumberSelected() {
+    var snSelect = document.getElementById('input-serial-number');
+    if (!snSelect) return;
+    var selectedOption = snSelect.options[snSelect.selectedIndex];
+    var machineId = selectedOption ? selectedOption.getAttribute('data-id') : '';
+    var inputId = document.getElementById('input-machine-id');
+    if (inputId) inputId.value = machineId || '';
+  }
+
+  function executeTicketAction(ticketId, statusName, payloadObj) {
+    showToast('Memproses Status', 'Memperbarui status tiket ke ' + statusName + '...', 'success');
+    var userName = currentUser ? currentUser.name : 'Monitoring';
+
+    if (typeof google !== 'undefined' && google.script && google.script.run) {
+      google.script.run
+        .withSuccessHandler(function(res) {
+          if (res && res.status === 'success') {
+            showToast('Berhasil', 'Tiket ' + ticketId + ' berhasil diubah ke ' + statusName, 'success');
+            if (typeof loadFSEPortalData === 'function') loadFSEPortalData();
+            if (typeof fetchTickets === 'function') fetchTickets(currentPage);
+          } else {
+            showToast('Gagal', res ? res.message : 'Error update status', 'error');
+          }
+        })
+        .withFailureHandler(function(err) {
+          showToast('Error Server', 'Kendala koneksi backend: ' + err, 'error');
+        })
+        .updateTicketStatus(ticketId, statusName, payloadObj, userName);
+    }
+  }
+
+  function getMachineLocation(idMesin, serialNumber) {
+    if (cachedDropdowns && cachedDropdowns.machines) {
+      var mm = cachedDropdowns.machines.find(function(m) {
+        return m.idMesin === idMesin || m.serialNumber === serialNumber;
+      });
+      if (mm && mm.lokasi) return mm.lokasi;
+    }
+    if (cachedFSEMachinesList) {
+      var mm2 = cachedFSEMachinesList.find(function(m) {
+        return m.idMesin === idMesin || m.serialNumber === serialNumber;
+      });
+      if (mm2 && mm2.lokasi) return mm2.lokasi;
+    }
+    return '-';
+  }
+
+  function getStatusBadgeHtml(status) {
+    var s = String(status || '').trim();
+    var colorClass = 'bg-slate-100 text-slate-700 border-slate-200';
+
+    if (s === 'Assign') colorClass = 'bg-amber-100 text-amber-900 border-amber-300 font-bold';
+    else if (s === 'Open' || s === 'Baru') colorClass = 'bg-amber-50 text-amber-700 border-amber-200';
+    else if (s === 'Respon') colorClass = 'bg-sky-50 text-sky-700 border-sky-200';
+    else if (s === 'Appointment' || s === 'Re-Appointment') colorClass = 'bg-indigo-50 text-indigo-700 border-indigo-200';
+    else if (s === 'Arrival') colorClass = 'bg-fuchsia-50 text-fuchsia-700 border-fuchsia-200';
+    else if (s === 'Handling' || s === 'Proses') colorClass = 'bg-blue-50 text-blue-700 border-blue-200';
+    else if (s === 'Pending') colorClass = 'bg-amber-100 text-amber-900 border-amber-300 font-bold';
+    else if (s === 'Waiting Vendor') colorClass = 'bg-yellow-50 text-yellow-700 border-yellow-300';
+    else if (s === 'Solving' || s === 'Solved' || s === 'Selesai') colorClass = 'bg-emerald-50 text-emerald-700 border-emerald-200';
+    else if (s === 'Closed') colorClass = 'bg-purple-50 text-purple-700 border-purple-300 font-bold';
+    else if (s === 'Take a Part') colorClass = 'bg-orange-50 text-orange-700 border-orange-200';
+    else if (s === 'Cancel' || s === 'Batal') colorClass = 'bg-rose-50 text-rose-700 border-rose-200';
+
+    return '<span class="px-2.5 py-0.5 rounded-full text-[10px] font-semibold border ' + colorClass + '">' + escapeHtml(s) + '</span>';
+  }
+
+  function openFSETimelineModal(ticketId) {
+    var targetTicket = null;
+    if (window._cachedFSETickets) {
+      targetTicket = window._cachedFSETickets.find(function(t){ return t.idTiket === ticketId; });
+    }
+    if (!targetTicket && window._cachedClosedDocuments) {
+      targetTicket = window._cachedClosedDocuments.find(function(t){ return t.idTiket === ticketId; });
+    }
+    if (!targetTicket && window._cachedHistoryDocuments) {
+      targetTicket = window._cachedHistoryDocuments.find(function(t){ return t.idTiket === ticketId; });
+    }
+    if (!targetTicket && currentTicketsList) {
+      targetTicket = currentTicketsList.find(function(t){ return t.idTiket === ticketId; });
+    }
+
+    if (!targetTicket) {
+      showToast('Error', 'Data riwayat tidak ditemukan.', 'error');
+      return;
+    }
+
+    document.getElementById('timeline-ticket-id').innerText = ticketId;
+    var metaEl = document.getElementById('timeline-capture-meta');
+    if (metaEl) {
+      metaEl.innerText = 'Tiket: ' + ticketId + ' | ATM: ' + (targetTicket.serialNumber || '-') + ' (' + (targetTicket.bank || '-') + ')';
+    }
+
+    var container = document.getElementById('timeline-container');
+    var history = [];
+    try { history = JSON.parse(targetTicket.timelineHistory || '[]'); } catch(e) {}
+
+    var html = '';
+    if (history.length === 0) {
+      html = '<div class="text-center py-6 text-slate-400 text-xs">Belum ada riwayat tercatat di sistem.</div>';
+    } else {
+      html += '<div class="relative border-l-2 border-slate-200 ml-3 space-y-4 my-2">';
+      for (var i = 0; i < history.length; i++) {
+        var h = history[i];
+        html += '<div class="pl-5 relative">';
+        html += '<div class="absolute w-3 h-3 bg-teal-500 rounded-full -left-[7px] top-1 border-2 border-white shadow-sm"></div>';
+        html += '<div class="text-[10px] text-slate-400 font-mono">' + escapeHtml(h.time) + ' • <span class="text-teal-700 font-semibold">' + escapeHtml(h.user) + '</span></div>';
+        html += '<div class="font-bold text-xs text-slate-800">' + escapeHtml(h.status) + '</div>';
+        if (h.note && h.note !== '-') {
+          html += '<div class="text-[11px] text-slate-600 bg-slate-50 p-2 rounded-lg mt-1 border border-slate-100">' + escapeHtml(h.note) + '</div>';
+        }
+        html += '</div>';
+      }
+      html += '</div>';
+    }
+    container.innerHTML = html;
+    document.getElementById('fse-modal-timeline').classList.remove('hidden');
+  }
+
+  function closeFSETimelineModal() {
+    document.getElementById('fse-modal-timeline').classList.add('hidden');
+  }
+
+  function captureTimelineEvidence() {
+    var targetEl = document.getElementById('timeline-capture-target');
+    var ticketId = document.getElementById('timeline-ticket-id').innerText || 'Ticket';
+    var btn = document.getElementById('btn-capture-timeline');
+
+    if (!targetEl || typeof html2canvas === 'undefined') {
+      showToast('Peringatan', 'Library capture sedang dimuat, coba sebentar lagi.', 'error');
+      return;
+    }
+
+    if (btn) {
+      btn.disabled = true;
+      btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Menangkap Layar...';
+    }
+
+    html2canvas(targetEl, {
+      scale: 2,
+      useCORS: true,
+      backgroundColor: '#ffffff'
+    }).then(function(canvas) {
+      if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fa-solid fa-camera"></i> Screenshot Evidence (Download PNG)';
+      }
+
+      var link = document.createElement('a');
+      link.download = 'Evidence_Riwayat_' + ticketId + '_' + Date.now() + '.png';
+      link.href = canvas.toDataURL('image/png');
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+
+      showToast('Evidence Berhasil Diunduh', 'Bukti riwayat status tiket ' + ticketId + ' berhasil disimpan sebagai gambar.', 'success');
+    }).catch(function(err) {
+      if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fa-solid fa-camera"></i> Screenshot Evidence (Download PNG)';
+      }
+      showToast('Gagal Screenshot', 'Kendala: ' + err, 'error');
+    });
+  }
+
+  function UtilitiesDateString(d) {
+    var yr = d.getFullYear();
+    var mo = ('0' + (d.getMonth() + 1)).slice(-2);
+    var dy = ('0' + d.getDate()).slice(-2);
+    var hr = ('0' + d.getHours()).slice(-2);
+    var mn = ('0' + d.getMinutes()).slice(-2);
+    var sc = ('0' + d.getSeconds()).slice(-2);
+    return yr + '-' + mo + '-' + dy + ' ' + hr + ':' + mn + ':' + sc + ' WIB';
+  }
+
+  function formatDriveImageUrl(url) {
+    if (!url) return '';
+    var trimmed = String(url).trim();
+    if (trimmed.indexOf('drive.google.com') !== -1) {
+      var matchId = trimmed.match(/\/d\/([a-zA-Z0-9_-]+)/) || trimmed.match(/id=([a-zA-Z0-9_-]+)/);
+      if (matchId && matchId[1]) {
+        return 'https://drive.google.com/thumbnail?id=' + matchId[1] + '&sz=w1200';
+      }
+    }
+    return trimmed;
+  }
+
+  function handleFileChange(inputEl, btnId) {
+    var btn = document.getElementById(btnId);
+    if (inputEl.files && inputEl.files[0]) {
+      if (btn) btn.classList.remove('hidden');
+    } else {
+      if (btn) btn.classList.add('hidden');
+    }
+  }
+
+  function openLocalImagePreview(inputId, title) {
+    var inputEl = document.getElementById(inputId);
+    if (inputEl && inputEl.files && inputEl.files[0]) {
+      var reader = new FileReader();
+      reader.onload = function(e) {
+        viewImageModal(e.target.result, title);
+      };
+      reader.readAsDataURL(inputEl.files[0]);
+    }
+  }
+
+  /* Universal Image & Multi-Photo Gallery Viewer */
+  window._activePreviewGallery = [];
+  window._activePreviewIndex = 0;
+
+  function viewImageModal(imgSrc, title) {
+    var modal = document.getElementById('modal-image-preview');
+    var modalImg = document.getElementById('preview-modal-img');
+    var modalTitle = document.getElementById('preview-modal-title');
+    var counterEl = document.getElementById('preview-modal-counter');
+    var btnPrev = document.getElementById('btn-gallery-prev');
+    var btnNext = document.getElementById('btn-gallery-next');
+    var thumbStrip = document.getElementById('preview-modal-thumbnails-strip');
+    var fallbackMsg = document.getElementById('preview-modal-fallback-msg');
+
+    if (!modal || !modalImg) return;
+    if (fallbackMsg) fallbackMsg.classList.add('hidden');
+    modalImg.classList.remove('hidden');
+
+    if (modalTitle) {
+      modalTitle.innerHTML = '<i class="fa-solid fa-images text-teal-600 mr-1.5"></i>' + escapeHtml(title || 'Preview Bukti Foto');
+    }
+
+    // Pisahkan URL jika terdapat banyak foto yang digabung (\n atau koma)
+    var rawStr = String(imgSrc || '').trim();
+    var urls = rawStr.split(/[\n,]/).map(function(u) { return u.trim(); }).filter(Boolean);
+
+    window._activePreviewGallery = urls;
+    window._activePreviewIndex = 0;
+
+    if (urls.length > 1) {
+      if (counterEl) counterEl.classList.remove('hidden');
+      if (btnPrev) btnPrev.classList.remove('hidden');
+      if (btnNext) btnNext.classList.remove('hidden');
+      if (thumbStrip) thumbStrip.classList.remove('hidden');
+      renderGalleryThumbnails();
+    } else {
+      if (counterEl) counterEl.classList.add('hidden');
+      if (btnPrev) btnPrev.classList.add('hidden');
+      if (btnNext) btnNext.classList.add('hidden');
+      if (thumbStrip) thumbStrip.classList.add('hidden');
+    }
+
+    displayActiveGalleryImage();
+    modal.classList.remove('hidden');
+  }
+
+  function displayActiveGalleryImage() {
+    var modalImg = document.getElementById('preview-modal-img');
+    var counterEl = document.getElementById('preview-modal-counter');
+    var extLink = document.getElementById('preview-modal-external-link');
+    var fallbackMsg = document.getElementById('preview-modal-fallback-msg');
+
+    if (!modalImg) return;
+    if (fallbackMsg) fallbackMsg.classList.add('hidden');
+    modalImg.classList.remove('hidden');
+
+    var currentUrl = window._activePreviewGallery[window._activePreviewIndex] || '';
+    var streamUrl = formatDriveImageUrl(currentUrl);
+    modalImg.src = streamUrl;
+
+    if (counterEl && window._activePreviewGallery.length > 1) {
+      counterEl.innerText = 'Foto ' + (window._activePreviewIndex + 1) + ' dari ' + window._activePreviewGallery.length;
+    }
+
+    if (extLink) {
+      extLink.href = currentUrl;
+      if (currentUrl && currentUrl.indexOf('data:image') === 0) {
+        extLink.classList.add('hidden');
+      } else {
+        extLink.classList.remove('hidden');
+      }
+    }
+
+    highlightActiveThumbnail();
+  }
+
+  function navigateGallery(direction) {
+    if (!window._activePreviewGallery || window._activePreviewGallery.length <= 1) return;
+    var total = window._activePreviewGallery.length;
+    window._activePreviewIndex = (window._activePreviewIndex + direction + total) % total;
+    displayActiveGalleryImage();
+  }
+
+  function selectGalleryImage(idx) {
+    if (idx >= 0 && idx < window._activePreviewGallery.length) {
+      window._activePreviewIndex = idx;
+      displayActiveGalleryImage();
+    }
+  }
+
+  function renderGalleryThumbnails() {
+    var strip = document.getElementById('preview-modal-thumbnails-strip');
+    if (!strip) return;
+
+    var html = '';
+    for (var i = 0; i < window._activePreviewGallery.length; i++) {
+      var url = formatDriveImageUrl(window._activePreviewGallery[i]);
+      html += '<button type="button" onclick="selectGalleryImage(' + i + ')" class="gallery-thumb-btn w-12 h-12 rounded-lg overflow-hidden border-2 border-transparent shrink-0 opacity-60 hover:opacity-100 transition relative" data-idx="' + i + '">';
+      html += '<img src="' + url + '" alt="Thumb" class="w-full h-full object-cover">';
+      html += '<span class="absolute bottom-0 right-0 px-1 text-[8px] bg-black/70 text-white font-mono rounded-tl">' + (i + 1) + '</span>';
+      html += '</button>';
+    }
+    strip.innerHTML = html;
+  }
+
+  function highlightActiveThumbnail() {
+    var thumbs = document.querySelectorAll('.gallery-thumb-btn');
+    for (var i = 0; i < thumbs.length; i++) {
+      var btnIdx = parseInt(thumbs[i].getAttribute('data-idx'), 10);
+      if (btnIdx === window._activePreviewIndex) {
+        thumbs[i].className = 'gallery-thumb-btn w-12 h-12 rounded-lg overflow-hidden border-2 border-teal-500 shrink-0 opacity-100 shadow-md relative scale-105 transition';
+      } else {
+        thumbs[i].className = 'gallery-thumb-btn w-12 h-12 rounded-lg overflow-hidden border-2 border-transparent shrink-0 opacity-60 hover:opacity-100 transition relative';
+      }
+    }
+  }
+
+  function handleImagePreviewError(imgEl) {
+    imgEl.classList.add('hidden');
+    var fallbackMsg = document.getElementById('preview-modal-fallback-msg');
+    if (fallbackMsg) fallbackMsg.classList.remove('hidden');
+  }
+
+  function closeImagePreviewModal() {
+    var modal = document.getElementById('modal-image-preview');
+    if (modal) modal.classList.add('hidden');
+    window._activePreviewGallery = [];
+    window._activePreviewIndex = 0;
+  }
+
+  function showToast(title, message, type) {
+    var toast = document.getElementById('toast-notification');
+    var icon = document.getElementById('toast-icon');
+    var tTitle = document.getElementById('toast-title');
+    var tMsg = document.getElementById('toast-message');
+
+    if (!toast) return;
+
+    tTitle.innerText = title;
+    tMsg.innerText = message;
+
+    if (type === 'error') {
+      icon.innerHTML = '<i class="fa-solid fa-circle-exclamation text-rose-500"></i>';
+      toast.style.borderColor = 'rgba(244, 63, 94, 0.4)';
+    } else {
+      icon.innerHTML = '<i class="fa-solid fa-circle-check text-teal-600"></i>';
+      toast.style.borderColor = 'rgba(20, 184, 166, 0.4)';
+    }
+
+    toast.classList.remove('translate-y-20', 'opacity-0', 'pointer-events-none');
+    setTimeout(function() {
+      toast.classList.add('translate-y-20', 'opacity-0', 'pointer-events-none');
+    }, 4000);
+  }
+
+  function escapeHtml(string) {
+    if (!string) return '';
+    return String(string)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
+  }
+</script>

@@ -1,0 +1,310 @@
+<!-- ========================================================
+     MOBILE-FIRST DEDICATED VIEWPORT FOR FSE (FIELD SERVICE ENGINEER)
+     Navigasi Bottom Navbar (5 Menu):
+     Dashboard | Ticket | Data PM | Database FSE | Kirim Dokumen
+     Dilengkapi Floating Action Button (FAB) + khusus Tiket PM
+     serta Tombol 'X' Clear Search pada setiap kotak pencarian
+     ======================================================== -->
+<div id="fse-mobile-viewport" class="w-full max-w-md mx-auto min-h-screen flex flex-col justify-between pb-24 relative hidden text-slate-800">
+
+  <!-- TOP APP BAR FSE -->
+  <header class="sticky top-0 z-30 frosted-glass-slab !rounded-b-2xl !rounded-t-none px-4 py-3 border-b border-white/80 shadow-md">
+    <div class="flex items-center justify-between">
+      <div class="flex items-center gap-2.5">
+        <div class="w-9 h-9 rounded-xl bg-teal-600/10 border border-teal-500/20 flex items-center justify-center text-teal-700 shadow-sm">
+          <i class="fa-solid fa-user-gear text-sm"></i>
+        </div>
+        <div>
+          <div class="flex items-center gap-1.5">
+            <span class="font-extrabold text-xs tracking-tight text-slate-900">HARDIANSYAH <span class="text-teal-600">FAM</span></span>
+            <span class="text-[9px] px-1.5 py-0.2 bg-teal-100 text-teal-800 font-bold rounded font-mono">FSE</span>
+          </div>
+          <p id="fse-bar-name" class="text-[11px] font-semibold text-slate-700 truncate max-w-[170px] leading-tight">Teknisi Lapangan</p>
+        </div>
+      </div>
+
+      <div class="flex items-center gap-2">
+        <div class="text-[10px] font-mono text-teal-700 bg-teal-50 px-2 py-1 rounded-lg border border-teal-200" id="fse-live-clock">
+          --:-- WIB
+        </div>
+        <button onclick="handleLogout()" title="Keluar Akun" class="w-8 h-8 rounded-xl bg-white border border-slate-200 text-slate-500 hover:text-rose-600 hover:bg-rose-50 flex items-center justify-center transition shadow-sm">
+          <i class="fa-solid fa-arrow-right-from-bracket text-xs"></i>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- MAIN SCROLLABLE CONTENT AREA -->
+  <main class="flex-1 p-3.5 space-y-4">
+
+    <!-- SUBVIEW 1: FSE DASHBOARD -->
+    <section id="fse-view-dashboard" class="fse-subview space-y-3.5">
+      
+      <!-- Greeting Banner -->
+      <div class="soft-card-panel p-4 bg-gradient-to-br from-teal-700 to-teal-900 !text-white rounded-2xl shadow-lg relative overflow-hidden">
+        <div class="relative z-10">
+          <p class="text-[11px] text-teal-200 uppercase tracking-wider font-semibold">Field Service Telemetry</p>
+          <h2 id="fse-hero-greeting" class="text-base font-extrabold mt-0.5">Semangat Pagi!</h2>
+          <p id="fse-hero-wilayah" class="text-xs text-teal-100 mt-1 flex items-center gap-1.5">
+            <i class="fa-solid fa-location-dot text-emerald-300"></i>
+            <span>Area Tugas: DKI Jakarta</span>
+          </p>
+        </div>
+        <i class="fa-solid fa-screwdriver-wrench absolute right-3 -bottom-2 text-white/10 text-6xl pointer-events-none"></i>
+      </div>
+
+      <!-- 3 Metrics Card (Kelolaan Mesin, Total CM Sebulan, Total PM Sebulan) -->
+      <div class="grid grid-cols-3 gap-2.5">
+        
+        <!-- Card 1: Kelolaan Mesin -->
+        <div onclick="switchFSETab('database')" class="soft-card-panel p-3 text-center rounded-2xl flex flex-col justify-between cursor-pointer hover:border-teal-500 transition">
+          <div class="w-7 h-7 mx-auto rounded-lg bg-teal-50 text-teal-700 flex items-center justify-center text-xs mb-1">
+            <i class="fa-solid fa-server"></i>
+          </div>
+          <div id="fse-stat-mesin" class="text-lg font-mono font-extrabold text-slate-800">0</div>
+          <div class="text-[10px] text-slate-500 font-medium leading-tight">Kelolaan Mesin</div>
+        </div>
+
+        <!-- Card 2: Total CM Sebulan -->
+        <div class="soft-card-panel p-3 text-center rounded-2xl flex flex-col justify-between">
+          <div class="w-7 h-7 mx-auto rounded-lg bg-rose-50 text-rose-600 flex items-center justify-center text-xs mb-1">
+            <i class="fa-solid fa-triangle-exclamation"></i>
+          </div>
+          <div id="fse-stat-cm" class="text-lg font-mono font-extrabold text-rose-600">0</div>
+          <div class="text-[10px] text-slate-500 font-medium leading-tight">CM (Bln Ini)</div>
+        </div>
+
+        <!-- Card 3: Total PM Sebulan (Klik Langsung Buka Tab Data PM) -->
+        <div onclick="switchFSETab('pm')" class="soft-card-panel p-3 text-center rounded-2xl flex flex-col justify-between cursor-pointer hover:border-emerald-500 transition">
+          <div class="w-7 h-7 mx-auto rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center text-xs mb-1">
+            <i class="fa-solid fa-calendar-check"></i>
+          </div>
+          <div id="fse-stat-pm" class="text-lg font-mono font-extrabold text-emerald-700">0</div>
+          <div class="text-[10px] text-slate-500 font-medium leading-tight">PM (Bln Ini)</div>
+        </div>
+
+      </div>
+
+      <!-- SECTION KHUSUS: TIKET BARU DITUGASKAN (STATUS: ASSIGN) -->
+      <div class="space-y-2.5">
+        <div class="flex items-center justify-between">
+          <div class="flex items-center gap-1.5">
+            <span class="w-2.5 h-2.5 rounded-full bg-amber-500 animate-ping"></span>
+            <h3 class="font-bold text-xs text-slate-800">Tiket Baru Ditugaskan (Assign)</h3>
+          </div>
+          <span id="fse-assigned-badge-count" class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-300">0 Baru</span>
+        </div>
+
+        <!-- Kontainer Tiket Baru Berstatus Assign -->
+        <div id="fse-assigned-incoming-container" class="space-y-3">
+          <div class="text-center py-6 text-slate-400 text-xs bg-white/60 rounded-2xl border border-slate-200/80">
+            <i class="fa-solid fa-circle-check text-teal-600 text-xl mb-1 block"></i>
+            Tidak ada tiket baru yang menunggu respon Anda.
+          </div>
+        </div>
+      </div>
+
+      <!-- Quick Action Jump to Tickets -->
+      <div class="soft-card-panel p-3.5 rounded-2xl flex items-center justify-between">
+        <div>
+          <h4 class="text-xs font-bold text-slate-800">Progres Tiket Pengerjaan</h4>
+          <p class="text-[10px] text-slate-500">Lihat tiket aktif yang sedang ditangani</p>
+        </div>
+        <button onclick="switchFSETab('tickets')" class="soft-btn-primary px-3 py-1.5 text-xs rounded-xl font-semibold flex items-center gap-1">
+          <span>Buka Tiket</span>
+          <i class="fa-solid fa-chevron-right text-[10px]"></i>
+        </button>
+      </div>
+
+    </section>
+
+    <!-- SUBVIEW 2: FSE TICKET MANAGEMENT -->
+    <section id="fse-view-tickets" class="fse-subview space-y-3 hidden">
+      <div class="flex items-center justify-between pb-1 border-b border-slate-200">
+        <div>
+          <h3 class="font-bold text-xs text-slate-800 flex items-center gap-1.5">
+            <i class="fa-solid fa-ticket text-teal-600"></i>
+            <span>Tiket Penugasan Saya</span>
+          </h3>
+          <p class="text-[10px] text-slate-500">Tiket aktif yang telah direspon &amp; dalam pengerjaan</p>
+        </div>
+        <!-- Tombol Riwayat Tiket (Arsip Tiket Closed & Cancel) -->
+        <button onclick="openFSETicketHistoryModal()" title="Lihat Seluruh Riwayat Tiket (Closed & Cancel)" class="px-2.5 py-1 rounded-xl bg-teal-50 hover:bg-teal-100 text-teal-700 border border-teal-200 text-xs font-semibold flex items-center gap-1.5 shadow-sm transition">
+          <i class="fa-solid fa-clock-rotate-left text-[11px]"></i>
+          <span>Riwayat Tiket</span>
+        </button>
+      </div>
+
+      <!-- Ticket Cards List Container -->
+      <div id="fse-ticket-cards-container" class="space-y-3">
+        <div class="text-center py-10 text-slate-400 text-xs">
+          <i class="fa-solid fa-spinner fa-spin text-teal-600 text-xl mb-2 block"></i>
+          Memuat antrean tiket penugasan...
+        </div>
+      </div>
+    </section>
+
+    <!-- SUBVIEW 2.2: DATA PM (MENU KHUSUS FSE - SIKLUS KUARTAL ROLLING TARGET) -->
+    <section id="fse-view-pm" class="fse-subview space-y-3 hidden">
+      <div class="flex items-center justify-between pb-1 border-b border-slate-200">
+        <div>
+          <h3 class="font-bold text-xs text-slate-800 flex items-center gap-1.5">
+            <i class="fa-solid fa-calendar-check text-teal-600"></i>
+            <span>Jadwal PM Mesin Kelolaan</span>
+          </h3>
+          <p id="fse-pm-current-period-label" class="text-[10px] text-slate-500">Siklus Servis Berkala Kuartal</p>
+        </div>
+        <span id="fse-pm-badge-summary" class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-teal-50 text-teal-800 border border-teal-200">
+          0 Mesin
+        </span>
+      </div>
+
+      <!-- Urgent Alert Banner Jika Berada di Bulan Terakhir Kuartal -->
+      <div id="fse-pm-urgent-warning-banner" class="p-3 rounded-2xl bg-gradient-to-r from-rose-500 to-rose-600 text-white shadow-md space-y-1 hidden animate-pulse">
+        <div class="flex items-center gap-1.5 font-bold text-xs">
+          <i class="fa-solid fa-triangle-exclamation"></i>
+          <span>PERHATIAN: BULAN TERAKHIR PERIODE!</span>
+        </div>
+        <p class="text-[10px] text-rose-100 leading-snug">
+          Bulan ini adalah batas penutupan kuartal. Mesin yang belum di-PM harus segera dikerjakan agar pencapaian tidak terlewat.
+        </p>
+      </div>
+
+      <!-- Realtime Filter Box Mesin PM FSE dengan Tombol X Clear Search -->
+      <div class="relative">
+        <i class="fa-solid fa-magnifying-glass absolute left-3 top-2.5 text-slate-400 text-xs"></i>
+        <input type="text" id="filter-fse-pm-search" oninput="filterFSEPMCardsInline()" placeholder="Cari SN / ID Mesin / Lokasi PM..." 
+          class="soft-input w-full pl-9 pr-8 py-2 text-xs rounded-xl">
+        <button id="btn-clear-fse-pm-search" type="button" onclick="clearFSEPMSearch()" title="Hapus pencarian"
+          class="absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-600 text-xs hidden transition">
+          <i class="fa-solid fa-circle-xmark"></i>
+        </button>
+      </div>
+
+      <!-- PM Cards Container -->
+      <div id="fse-pm-cards-container" class="space-y-3">
+        <div class="text-center py-10 text-slate-400 text-xs">
+          <i class="fa-solid fa-spinner fa-spin text-teal-600 text-xl mb-2 block"></i>
+          Memuat jadwal PM mesin kelolaan Anda...
+        </div>
+      </div>
+    </section>
+
+    <!-- SUBVIEW 2.5: DATABASE FSE (DAFTAR MESIN KELOLAAN TEKNISI INLINE) -->
+    <section id="fse-view-database" class="fse-subview space-y-3 hidden">
+      <div class="flex items-center justify-between pb-1 border-b border-slate-200">
+        <div>
+          <h3 class="font-bold text-xs text-slate-800 flex items-center gap-1.5">
+            <i class="fa-solid fa-server text-teal-600"></i>
+            <span>Database FSE (Mesin Kelolaan)</span>
+          </h3>
+          <p class="text-[10px] text-slate-500">Daftar mesin ATM di bawah tanggung jawab Anda</p>
+        </div>
+        <span id="fse-managed-count-badge" class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-teal-50 text-teal-800 border border-teal-200">0 Mesin</span>
+      </div>
+
+      <!-- Realtime Search Machine for FSE dengan Tombol X Clear Search -->
+      <div class="relative">
+        <i class="fa-solid fa-magnifying-glass absolute left-3 top-2.5 text-slate-400 text-xs"></i>
+        <input type="text" id="filter-fse-machine-search" oninput="filterFSEMachinesInline()" placeholder="Cari SN / ID Mesin / Lokasi..." 
+          class="soft-input w-full pl-9 pr-8 py-2 text-xs rounded-xl">
+        <button id="btn-clear-fse-machine-search" type="button" onclick="clearFSEMachineSearch()" title="Hapus pencarian"
+          class="absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-600 text-xs hidden transition">
+          <i class="fa-solid fa-circle-xmark"></i>
+        </button>
+      </div>
+
+      <!-- Container Mesin Kelolaan -->
+      <div id="fse-managed-machines-container" class="space-y-2.5">
+        <div class="text-center py-8 text-slate-400 text-xs">
+          <i class="fa-solid fa-spinner fa-spin text-teal-600 text-xl mb-2 block"></i>
+          Memuat mesin kelolaan...
+        </div>
+      </div>
+    </section>
+
+    <!-- SUBVIEW 3: FSE KIRIM DOKUMEN (BATCH DISPATCH & CHECKLIST) -->
+    <section id="fse-view-documents" class="fse-subview space-y-3 hidden">
+      <div class="pb-1 border-b border-slate-200">
+        <h3 class="font-bold text-xs text-slate-800 flex items-center gap-1.5">
+          <i class="fa-solid fa-file-invoice text-teal-600"></i>
+          <span>Pengiriman Dokumen Hardcopy (Tiket Closed)</span>
+        </h3>
+        <p class="text-[10px] text-slate-500 mt-0.5">
+          SLA Pengiriman: <span class="font-semibold text-slate-700">Maksimal 3 Menit (Deploy)</span> / 3 Hari (Prod)
+        </p>
+      </div>
+
+      <!-- Toolbar Batch Checklist dan Tombol Kirim Dokumen -->
+      <div class="flex flex-wrap items-center justify-between gap-2 p-2.5 rounded-xl bg-white/90 border border-slate-200/80 shadow-sm">
+        <div class="flex items-center gap-1.5">
+          <button type="button" onclick="selectAllDocuments(true)" class="px-2.5 py-1 rounded-lg bg-teal-50 hover:bg-teal-100 text-teal-700 border border-teal-200 text-[11px] font-semibold transition flex items-center gap-1">
+            <i class="fa-solid fa-check-double text-[10px]"></i> Pilih Semua
+          </button>
+          <button type="button" onclick="selectAllDocuments(false)" class="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 text-[11px] font-semibold transition flex items-center gap-1">
+            <i class="fa-solid fa-xmark text-[10px]"></i> Hapus Pilihan
+          </button>
+        </div>
+
+        <button type="button" id="btn-batch-send-docs" onclick="submitBatchSendDocuments()" disabled class="soft-btn-primary px-3 py-1.5 rounded-xl text-xs font-bold shadow-sm flex items-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed">
+          <i class="fa-solid fa-paper-plane text-[10px]"></i>
+          <span>Kirim Dokumen</span>
+          <span id="selected-docs-count" class="px-1.5 py-0.2 bg-white/20 rounded-full text-[10px]">0</span>
+        </button>
+      </div>
+
+      <!-- Closed Document List Container -->
+      <div id="fse-document-cards-container" class="space-y-3">
+        <div class="text-center py-10 text-slate-400 text-xs">
+          <i class="fa-solid fa-spinner fa-spin text-teal-600 text-xl mb-2 block"></i>
+          Memeriksa tiket yang berstatus Closed...
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- FAB FOR CREATING PREVENTIVE MAINTENANCE TICKET ONLY -->
+  <button onclick="openFSECreatePMModal()" title="Buat Laporan PM Baru" class="fixed bottom-20 right-5 w-14 h-14 bg-gradient-to-br from-emerald-500 to-teal-600 text-white rounded-full shadow-[0_8px_24px_rgba(20,184,166,0.45)] flex items-center justify-center text-2xl z-40 hover:scale-105 active:scale-95 transition-transform border-2 border-white/40">
+    <i class="fa-solid fa-plus"></i>
+  </button>
+
+  <!-- BOTTOM NAVBAR (STICKY BOTTOM DENGAN 5 MENU LENGKAP) -->
+  <nav class="fixed bottom-0 left-0 right-0 max-w-md mx-auto frosted-glass-slab !rounded-t-2xl !rounded-b-none border-t border-white/90 p-1.5 z-40 flex items-center justify-around shadow-2xl bg-white/95">
+    
+    <!-- Tab 1: Dashboard -->
+    <button id="fse-nav-dashboard" onclick="switchFSETab('dashboard')" class="fse-bottom-btn active flex-1 py-1 flex flex-col items-center gap-0.5 text-teal-700 font-semibold transition">
+      <i class="fa-solid fa-gauge-high text-base"></i>
+      <span class="text-[9px]">Dashboard</span>
+    </button>
+
+    <!-- Tab 2: Ticket -->
+    <button id="fse-nav-tickets" onclick="switchFSETab('tickets')" class="fse-bottom-btn flex-1 py-1 flex flex-col items-center gap-0.5 text-slate-400 hover:text-teal-700 font-medium transition relative">
+      <i class="fa-solid fa-ticket text-base"></i>
+      <span class="text-[9px]">Ticket</span>
+      <span id="fse-ticket-count-badge" class="absolute top-0 right-3 w-2 h-2 rounded-full bg-rose-500 hidden"></span>
+    </button>
+
+    <!-- Tab 2.2: Data PM -->
+    <button id="fse-nav-pm" onclick="switchFSETab('pm')" class="fse-bottom-btn flex-1 py-1 flex flex-col items-center gap-0.5 text-slate-400 hover:text-teal-700 font-medium transition relative">
+      <i class="fa-solid fa-calendar-check text-base"></i>
+      <span class="text-[9px]">Data PM</span>
+      <span id="fse-pm-warning-badge-dot" class="absolute top-0 right-3 w-2 h-2 rounded-full bg-rose-500 hidden animate-ping"></span>
+    </button>
+
+    <!-- Tab 2.5: Database FSE -->
+    <button id="fse-nav-database" onclick="switchFSETab('database')" class="fse-bottom-btn flex-1 py-1 flex flex-col items-center gap-0.5 text-slate-400 hover:text-teal-700 font-medium transition">
+      <i class="fa-solid fa-server text-base"></i>
+      <span class="text-[9px]">Database</span>
+    </button>
+
+    <!-- Tab 3: Kirim Dokumen -->
+    <button id="fse-nav-documents" onclick="switchFSETab('documents')" class="fse-bottom-btn flex-1 py-1 flex flex-col items-center gap-0.5 text-slate-400 hover:text-teal-700 font-medium transition relative">
+      <i class="fa-solid fa-file-invoice text-base"></i>
+      <span class="text-[9px]">Dokumen</span>
+      <span id="fse-doc-alert-badge" class="absolute top-0 right-3 w-2 h-2 rounded-full bg-amber-500 hidden"></span>
+    </button>
+
+  </nav>
+
+</div>

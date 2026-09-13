@@ -1,9 +1,27 @@
 <!-- ========================================================
-     JS MONITORING: Antrean Tiket NOC, Paginasi, Filter,
-     Dashboard Metrics, Master FSE, Mesin, Bank, Import CSV,
-     serta Indikator Peringatan SLA Milestone CM Realtime
+     JS MONITORING: Antrean Tiket NOC Horizontal, Paginasi, Filter,
+     Submenu Pemilah Tipe Tiket (Semua, CM, PM, UAT), Tombol X Clear Search,
+     Dashboard Metrics, Master FSE Horizontal,
+     Fitur Alihkan Penugasan Tiket (Re-Assign FSE),
+     Manajemen Akun Karyawan Universal (FSE, Monitoring, Super Admin),
+     Database Mesin dengan Dropdown Interaktif FSE Pengelola & Status,
+     SLA Achievement Berkeadilan (Tri-Party Stopwatch, Vendor OLA Capping 120m,
+     Geographic Zoning, Repeat Problem Watchlist, & Leaderboard Reporting FSE).
      ======================================================== -->
 <script>
+  var currentTicketTypeFilter = 'ALL';
+  var cachedSLAResultData = null;
+  var searchSLAAuditDebounceTimer = null;
+  var activeSLAMetricType = 'overall';
+
+  var cachedFSEReportingData = null;
+  var activeDrillDownFSE = null;
+
+  /* State Manajemen User & Re-Assign Tiket */
+  var currentUserTab = 'fse';
+  var cachedUsersList = [];
+  var activeReassignTicket = null;
+
   function openCreateTicketModal() {
     var modal = document.getElementById('modal-create-ticket');
     modal.classList.remove('hidden');
@@ -60,6 +78,61 @@
     }
   }
 
+  /* Submenu Pemilah Tipe Tiket: Semua, CM, PM, UAT */
+  function setTicketTypeFilter(type) {
+    currentTicketTypeFilter = type || 'ALL';
+
+    var pills = document.querySelectorAll('.ticket-type-pill');
+    for (var i = 0; i < pills.length; i++) {
+      pills[i].className = 'ticket-type-pill px-3.5 py-1.5 rounded-xl text-xs font-semibold text-slate-600 hover:text-slate-800 transition flex items-center gap-1.5';
+    }
+
+    var activePillId = 'tab-ticket-type-all';
+    var labelText = 'Semua Tiket';
+
+    if (type === 'CM') {
+      activePillId = 'tab-ticket-type-cm';
+      labelText = 'Corrective Maintenance (CM)';
+    } else if (type === 'PM') {
+      activePillId = 'tab-ticket-type-pm';
+      labelText = 'Preventive Maintenance (PM)';
+    } else if (type === 'UAT') {
+      activePillId = 'tab-ticket-type-uat';
+      labelText = 'UAT / Project / Aktivasi';
+    }
+
+    var activeBtn = document.getElementById(activePillId);
+    if (activeBtn) {
+      activeBtn.className = 'ticket-type-pill active px-3.5 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 text-slate-800 bg-white shadow-sm border border-slate-200/60';
+    }
+
+    var labelEl = document.getElementById('label-active-ticket-type');
+    if (labelEl) labelEl.innerText = labelText;
+
+    fetchTickets(1);
+  }
+
+  function handleTicketSearchInput() {
+    var searchEl = document.getElementById('filter-search');
+    var clearBtn = document.getElementById('btn-clear-ticket-search');
+    var query = searchEl ? String(searchEl.value || '').trim() : '';
+
+    if (clearBtn) {
+      if (query !== '') clearBtn.classList.remove('hidden');
+      else clearBtn.classList.add('hidden');
+    }
+
+    debounceSearch();
+  }
+
+  function clearTicketSearch() {
+    var searchEl = document.getElementById('filter-search');
+    var clearBtn = document.getElementById('btn-clear-ticket-search');
+    if (searchEl) searchEl.value = '';
+    if (clearBtn) clearBtn.classList.add('hidden');
+    fetchTickets(1);
+  }
+
   function fetchTickets(page) {
     currentPage = page || 1;
     var searchEl = document.getElementById('filter-search');
@@ -72,7 +145,7 @@
 
     var tbody = document.getElementById('tickets-table-body');
     if (tbody && (!currentTicketsList || currentTicketsList.length === 0)) {
-      tbody.innerHTML = '<tr><td colspan="8" class="text-center py-6 text-slate-400 font-mono text-xs"><i class="fa-solid fa-spinner fa-spin text-teal-600 mr-2"></i>Mengambil antrean tiket...</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="11" class="text-center py-6 text-slate-400 font-mono text-xs"><i class="fa-solid fa-spinner fa-spin text-teal-600 mr-2 text-base"></i>Mengambil antrean tiket...</td></tr>';
     }
 
     if (typeof google !== 'undefined' && google.script && google.script.run) {
@@ -132,12 +205,10 @@
     var createMs = new Date(createStr.replace(/-/g, '/')).getTime();
     var ageMins = !isNaN(createMs) ? Math.max(0, Math.floor((nowMs - createMs) / (60 * 1000))) : 0;
 
-    /* Warning 1: Tiket CM masih status Assign > 5 Menit (Respon Lambat) */
     if ((stLower === 'assign' || stLower === 'open' || stLower === 'baru') && ageMins > 5) {
       return '<div class="mt-1"><span class="px-2 py-0.5 rounded-md bg-rose-100 text-rose-800 font-bold text-[9px] border border-rose-300 animate-pulse inline-flex items-center gap-1"><i class="fa-solid fa-triangle-exclamation text-rose-600"></i> Respon Lambat (' + ageMins + 'm)</span></div>';
     }
 
-    /* Warning 2: Tiket CM berstatus Handling > 2 Jam (120 Menit) */
     if (stLower === 'handling' && t.waktuHandling) {
       var hMs = new Date(String(t.waktuHandling).replace(/-/g, '/')).getTime();
       if (!isNaN(hMs)) {
@@ -148,12 +219,10 @@
       }
     }
 
-    /* Warning 3: Tiket CM aktif yang total umurnya > 4 Jam (Melebihi batas SLA) */
     if (stLower !== 'solving' && stLower !== 'solved' && stLower !== 'closed' && stLower !== 'cancel' && ageMins > 240) {
       return '<div class="mt-1"><span class="px-2 py-0.5 rounded-md bg-rose-600 text-white font-bold text-[9px] inline-flex items-center gap-1 animate-pulse"><i class="fa-solid fa-triangle-exclamation"></i> ⚠️ Melebihi batas SLA</span></div>';
     }
 
-    /* Status Performa Tidak Bagus tersimpan di database */
     var slaSt = String(t.statusSlaCm || '').toLowerCase();
     if (slaSt === 'performa tidak bagus' || slaSt === 'breached') {
       return '<div class="mt-1"><span class="px-2 py-0.5 rounded-md bg-rose-50 text-rose-700 font-bold text-[9px] border border-rose-200 inline-flex items-center gap-1"><i class="fa-solid fa-circle-exclamation text-rose-500"></i> Performa Tidak Bagus</span></div>';
@@ -166,19 +235,38 @@
     var tbody = document.getElementById('tickets-table-body');
     if (!tbody) return;
 
-    if (!tickets || tickets.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="8" class="text-center py-8 text-slate-400 font-mono text-xs"><i class="fa-solid fa-inbox text-2xl mb-2 block text-slate-300"></i>Tidak ada tiket yang cocok</td></tr>';
+    var displayTickets = tickets || [];
+    if (currentTicketTypeFilter !== 'ALL') {
+      displayTickets = displayTickets.filter(function(t) {
+        var rawT = String(t.tipeTiket || '').toLowerCase();
+        if (currentTicketTypeFilter === 'CM') return (rawT.indexOf('cm') !== -1 || rawT.indexOf('corrective') !== -1);
+        if (currentTicketTypeFilter === 'PM') return (rawT.indexOf('pm') !== -1 || rawT.indexOf('preventive') !== -1);
+        if (currentTicketTypeFilter === 'UAT') return (rawT.indexOf('uat') !== -1 || rawT.indexOf('project') !== -1 || rawT.indexOf('activation') !== -1);
+        return true;
+      });
+    }
+
+    if (!displayTickets || displayTickets.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="11" class="text-center py-8 text-slate-400 font-mono text-xs"><i class="fa-solid fa-inbox text-2xl mb-2 block text-slate-300"></i>Tidak ada tiket yang cocok dengan filter.</td></tr>';
       return;
     }
 
     var isMonitoring = (currentUser && (currentUser.roleKey === 'monitoring' || currentUser.roleKey === 'admin'));
     var html = '';
 
-    for (var i = 0; i < tickets.length; i++) {
-      var t = tickets[i];
+    for (var i = 0; i < displayTickets.length; i++) {
+      var t = displayTickets[i];
       var badge = getStatusBadgeHtml(t.statusTiket);
       var stLower = String(t.statusTiket || '').toLowerCase();
       var slaAlert = getMonitoringTicketSLAWarning(t);
+
+      // Indikator Repeat Problem 7 Hari
+      var repeatBadge = '';
+      if (t.repeatCount7d && t.repeatCount7d >= 2) {
+        var isHighRepeat = (t.repeatCount7d >= 3);
+        var rColor = isHighRepeat ? 'bg-rose-100 text-rose-800 border-rose-300 animate-pulse' : 'bg-amber-100 text-amber-900 border-amber-300';
+        repeatBadge = '<div class="mt-1"><span class="px-2 py-0.5 rounded-md font-bold text-[9px] border ' + rColor + ' inline-flex items-center gap-1" title="Unit ini mengalami gangguan ' + t.repeatCount7d + ' kali dalam 7 hari terakhir!"><i class="fa-solid fa-arrows-rotate ' + (isHighRepeat ? 'text-rose-600' : 'text-amber-600') + '"></i> Repeat ' + t.repeatCount7d + 'x (7 Hari)</span></div>';
+      }
 
       var rawTipe = String(t.tipeTiket || 'CM').toLowerCase();
       var shorthandTipe = 'CM';
@@ -200,34 +288,44 @@
         pureNote = pureNote.split(' | [')[0].trim();
       }
 
+      var timeOpenDisplay = (t.tanggalTiket || '-') + ' ' + (t.jamTiket || '') + ' WIB';
+
+      // Cek apakah tiket masih aktif (bisa dialihkan penugasannya)
+      var canReassign = isMonitoring && (
+        stLower !== 'closed' && 
+        stLower !== 'cancel' && 
+        stLower !== 'batal' && 
+        stLower !== 'solved' && 
+        stLower !== 'solving'
+      );
+
       html += '<tr class="hover:bg-white/80 transition">';
       html += '<td class="p-3 font-mono font-bold text-teal-700 whitespace-nowrap">' + escapeHtml(t.idTiket) + '</td>';
-      html += '<td class="p-3">';
-      html += '<div class="font-semibold text-slate-800">' + escapeHtml(t.bank) + '</div>';
-      html += '<div class="text-[11px] text-slate-500 font-mono">' + escapeHtml(t.serialNumber) + ' (' + escapeHtml(t.idMesin) + ')</div>';
-      html += '</td>';
-      html += '<td class="p-3 whitespace-nowrap">';
-      html += '<div class="text-slate-700 font-mono">' + escapeHtml(t.tanggalTiket) + '</div>';
-      html += '<div class="text-[10px] text-slate-400 font-mono">' + escapeHtml(t.jamTiket) + '</div>';
-      html += '</td>';
+      html += '<td class="p-3 font-semibold text-slate-800 whitespace-nowrap">' + escapeHtml(t.bank) + '</td>';
+      html += '<td class="p-3 font-mono font-bold text-teal-800 whitespace-nowrap">' + escapeHtml(t.idMesin) + '</td>';
+      html += '<td class="p-3 font-mono text-slate-600 whitespace-nowrap text-xs">' + escapeHtml(t.serialNumber) + '</td>';
+      html += '<td class="p-3 font-mono text-slate-700 whitespace-nowrap text-xs">' + escapeHtml(timeOpenDisplay) + '</td>';
       html += '<td class="p-3 whitespace-nowrap"><span class="px-2 py-0.5 rounded-md font-bold text-[11px] border ' + tipeBadgeClass + '">' + shorthandTipe + '</span></td>';
-      html += '<td class="p-3 whitespace-nowrap">';
-      html += '<span class="px-2.5 py-1 rounded-lg bg-slate-100 border border-slate-200 text-slate-700 font-medium">' + escapeHtml(t.namaEngineer) + '</span>';
-      html += '</td>';
-      html += '<td class="p-3 max-w-xs">';
-      html += '<div class="font-medium text-slate-800 truncate" title="' + escapeHtml(t.problem) + '">' + escapeHtml(t.problem) + '</div>';
-      if (pureNote && pureNote !== '-') {
-        html += '<div class="text-[10px] text-slate-500 italic truncate" title="' + escapeHtml(pureNote) + '">Note: ' + escapeHtml(pureNote) + '</div>';
-      }
-      html += '</td>';
-      html += '<td class="p-3 whitespace-nowrap">' + badge + slaAlert + '</td>';
+      html += '<td class="p-3 whitespace-nowrap"><span class="px-2.5 py-1 rounded-lg bg-slate-100 border border-slate-200 text-slate-700 font-medium">' + escapeHtml(t.namaEngineer) + '</span></td>';
+      html += '<td class="p-3 max-w-xs font-medium text-slate-800 truncate" title="' + escapeHtml(t.problem) + '">' + escapeHtml(t.problem) + '</td>';
+      html += '<td class="p-3 max-w-xs text-slate-500 italic text-[11px] truncate" title="' + escapeHtml(pureNote) + '">' + escapeHtml(pureNote) + '</td>';
+      html += '<td class="p-3 whitespace-nowrap">' + badge + slaAlert + repeatBadge + '</td>';
       html += '<td class="p-3 text-center whitespace-nowrap">';
       html += '<div class="flex items-center justify-center gap-1.5">';
       
+      // Tombol 1: Riwayat Audit
       html += '<button onclick="openFSETimelineModal(\'' + escapeHtml(t.idTiket) + '\')" title="Lihat Riwayat" class="px-2.5 py-1 text-[11px] rounded-lg bg-teal-50 border border-teal-200 text-teal-700 hover:bg-teal-600 hover:text-white transition flex items-center gap-1 shadow-sm font-medium">';
       html += '<i class="fa-solid fa-clock-rotate-left text-[10px]"></i> Riwayat';
       html += '</button>';
 
+      // Tombol 2: Alihkan FSE (Re-Assign) untuk Tiket Aktif
+      if (canReassign) {
+        html += '<button onclick="openReassignTicketModal(\'' + escapeHtml(t.idTiket) + '\')" title="Alihkan Penugasan Teknisi (FSE Izin/Sakit)" class="px-2.5 py-1 text-[11px] rounded-lg bg-amber-50 border border-amber-200 text-amber-800 hover:bg-amber-600 hover:text-white transition flex items-center gap-1 shadow-sm font-semibold">';
+        html += '<i class="fa-solid fa-people-arrows text-[10px]"></i> Alihkan';
+        html += '</button>';
+      }
+
+      // Tombol 3: Closed Permanen untuk Tiket Solved
       if (isMonitoring && (stLower === 'solved' || stLower === 'solving')) {
         html += '<button onclick="executeTicketAction(\'' + escapeHtml(t.idTiket) + '\', \'Closed\', { note: \'Tiket ditutup permanen oleh Monitoring\' })" title="Tutup Tiket Permanen (Pindah ke Kirim Dokumen FSE)" class="px-2.5 py-1 text-[11px] rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold transition flex items-center gap-1 shadow-sm">';
         html += '<i class="fa-solid fa-lock text-[10px]"></i> Closed';
@@ -241,6 +339,410 @@
     tbody.innerHTML = html;
 
     renderDashboardRecent(tickets);
+  }
+
+  /* ========================================================
+     FITUR 1: LOGIKA ALIKAN PENUGASAN TIKET (RE-ASSIGN FSE)
+     ======================================================== */
+  function openReassignTicketModal(ticketId) {
+    var ticket = (currentTicketsList || []).find(function(t) { return t.idTiket === ticketId; });
+    if (!ticket) {
+      showToast('Error', 'Data tiket tidak ditemukan.', 'error');
+      return;
+    }
+
+    activeReassignTicket = ticket;
+
+    var elId = document.getElementById('reassign-ticket-id');
+    var elBank = document.getElementById('reassign-ticket-bank');
+    var elSn = document.getElementById('reassign-ticket-sn');
+    var elIdMesin = document.getElementById('reassign-ticket-idmesin');
+    var elProblem = document.getElementById('reassign-ticket-problem');
+    var elCurrentFse = document.getElementById('reassign-current-fse');
+    var elReason = document.getElementById('reassign-reason');
+    var selectNewFse = document.getElementById('reassign-new-fse');
+
+    if (elId) elId.innerText = ticket.idTiket;
+    if (elBank) elBank.innerText = ticket.bank || '-';
+    if (elSn) elSn.innerText = ticket.serialNumber || '-';
+    if (elIdMesin) elIdMesin.innerText = ticket.idMesin || '-';
+    if (elProblem) elProblem.innerText = ticket.problem || '-';
+    if (elCurrentFse) elCurrentFse.innerText = ticket.namaEngineer || 'Belum Ditugaskan';
+    if (elReason) elReason.value = '';
+
+    // Isi daftar FSE pengganti yang aktif dan bukan FSE saat ini
+    var currentEngineer = String(ticket.namaEngineer || '').trim().toLowerCase();
+    var fseOptions = '<option value="">-- Pilih Teknisi Pengganti --</option>';
+
+    var engineers = (cachedDropdowns && cachedDropdowns.engineers && cachedDropdowns.engineers.length > 0)
+      ? cachedDropdowns.engineers
+      : currentFSEList;
+
+    for (var i = 0; i < (engineers || []).length; i++) {
+      var eng = engineers[i];
+      var engName = String(eng.nama || eng).trim();
+      var engWilayah = String(eng.wilayah || 'Jabodetabek').trim();
+      
+      // Lewati teknisi yang sedang memegang tiket ini saat ini
+      if (engName.toLowerCase() === currentEngineer) continue;
+
+      fseOptions += '<option value="' + escapeHtml(engName) + '">' + escapeHtml(engName) + ' (' + escapeHtml(engWilayah) + ')</option>';
+    }
+
+    if (selectNewFse) selectNewFse.innerHTML = fseOptions;
+
+    var modal = document.getElementById('modal-reassign-ticket');
+    if (modal) modal.classList.remove('hidden');
+  }
+
+  function closeReassignTicketModal() {
+    var modal = document.getElementById('modal-reassign-ticket');
+    if (modal) modal.classList.add('hidden');
+    activeReassignTicket = null;
+  }
+
+  function submitReassignTicket(event) {
+    if (event) event.preventDefault();
+    if (!activeReassignTicket) return;
+
+    var ticketId = activeReassignTicket.idTiket;
+    var selectNewFse = document.getElementById('reassign-new-fse');
+    var elReason = document.getElementById('reassign-reason');
+    var btnSubmit = document.getElementById('btn-submit-reassign');
+
+    var newEngineer = selectNewFse ? selectNewFse.value.trim() : '';
+    var reason = elReason ? elReason.value.trim() : '';
+
+    if (!newEngineer) {
+      showToast('Peringatan', 'Silakan pilih teknisi pengganti terlebih dahulu.', 'error');
+      return;
+    }
+    if (!reason) {
+      showToast('Peringatan', 'Alasan pengalihan tugas wajib diisi.', 'error');
+      return;
+    }
+
+    if (btnSubmit) {
+      btnSubmit.disabled = true;
+      btnSubmit.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Mengalihkan Tiket...';
+    }
+
+    if (typeof google !== 'undefined' && google.script && google.script.run) {
+      google.script.run
+        .withSuccessHandler(function(res) {
+          if (btnSubmit) {
+            btnSubmit.disabled = false;
+            btnSubmit.innerHTML = '<i class="fa-solid fa-people-arrows"></i> <span>Simpan &amp; Alihkan Tiket</span>';
+          }
+          closeReassignTicketModal();
+
+          if (res && res.status === 'success') {
+            showToast('Pengalihan Berhasil', res.message, 'success');
+            fetchTickets(currentPage || 1);
+            loadDashboardMetrics();
+          } else {
+            showToast('Gagal Pengalihan', res ? res.message : 'Error server', 'error');
+          }
+        })
+        .withFailureHandler(function(err) {
+          if (btnSubmit) {
+            btnSubmit.disabled = false;
+            btnSubmit.innerHTML = '<i class="fa-solid fa-people-arrows"></i> <span>Simpan &amp; Alihkan Tiket</span>';
+          }
+          showToast('Error Server', 'Kendala server: ' + err, 'error');
+        })
+        .reassignTicketFSE(ticketId, newEngineer, reason, currentUser);
+    } else {
+      setTimeout(function() {
+        if (btnSubmit) {
+          btnSubmit.disabled = false;
+          btnSubmit.innerHTML = '<i class="fa-solid fa-people-arrows"></i> <span>Simpan &amp; Alihkan Tiket</span>';
+        }
+        closeReassignTicketModal();
+        showToast('Pengalihan Berhasil (Demo)', 'Tiket ' + ticketId + ' dialihkan ke ' + newEngineer, 'success');
+        fetchTickets(1);
+      }, 500);
+    }
+  }
+
+  /* ========================================================
+     FITUR 2: LOGIKA SUB-TAB KARYAWAN & REGISTRASI UNIVERSAL
+     ======================================================== */
+  function switchUserTab(tabName) {
+    currentUserTab = tabName || 'fse';
+
+    var btnFSE = document.getElementById('tab-user-fse');
+    var btnStaff = document.getElementById('tab-user-staff');
+    var contentFSE = document.getElementById('content-tab-fse');
+    var contentStaff = document.getElementById('content-tab-staff');
+    var labelTab = document.getElementById('label-active-user-tab');
+    var btnCSV = document.getElementById('btn-fse-csv-import');
+
+    if (currentUserTab === 'fse') {
+      if (btnFSE) btnFSE.className = 'user-tab-pill active px-3.5 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 text-slate-800 bg-white shadow-sm border border-slate-200/60';
+      if (btnStaff) btnStaff.className = 'user-tab-pill px-3.5 py-1.5 rounded-xl text-xs font-semibold text-slate-600 hover:text-slate-800 transition flex items-center gap-1.5';
+      if (contentFSE) contentFSE.classList.remove('hidden');
+      if (contentStaff) contentStaff.classList.add('hidden');
+      if (labelTab) labelTab.innerText = 'Daftar Teknisi Lapangan (FSE)';
+      if (btnCSV) btnCSV.classList.remove('hidden');
+      renderFSETable(currentFSEList);
+    } else {
+      if (btnStaff) btnStaff.className = 'user-tab-pill active px-3.5 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 text-slate-800 bg-white shadow-sm border border-slate-200/60';
+      if (btnFSE) btnFSE.className = 'user-tab-pill px-3.5 py-1.5 rounded-xl text-xs font-semibold text-slate-600 hover:text-slate-800 transition flex items-center gap-1.5';
+      if (contentStaff) contentStaff.classList.remove('hidden');
+      if (contentFSE) contentFSE.classList.add('hidden');
+      if (labelTab) labelTab.innerText = 'Daftar Petugas Monitoring & Super Admin';
+      if (btnCSV) btnCSV.classList.add('hidden');
+      loadUsersData();
+    }
+  }
+
+  function handleUserSearchInput() {
+    var searchInput = document.getElementById('filter-fse-search');
+    var clearBtn = document.getElementById('btn-clear-fse-search');
+    var query = searchInput ? searchInput.value.toLowerCase().trim() : '';
+
+    if (clearBtn) {
+      if (query !== '') clearBtn.classList.remove('hidden');
+      else clearBtn.classList.add('hidden');
+    }
+
+    if (currentUserTab === 'fse') {
+      var filteredFSE = currentFSEList.filter(function(item) {
+        if (!query) return true;
+        return (
+          item.userId.toLowerCase().indexOf(query) !== -1 ||
+          item.nama.toLowerCase().indexOf(query) !== -1 ||
+          item.wilayah.toLowerCase().indexOf(query) !== -1 ||
+          item.noHp.toLowerCase().indexOf(query) !== -1
+        );
+      });
+      renderFSETable(filteredFSE);
+    } else {
+      var filteredStaff = cachedUsersList.filter(function(item) {
+        if (!query) return true;
+        return (
+          item.userId.toLowerCase().indexOf(query) !== -1 ||
+          item.nama.toLowerCase().indexOf(query) !== -1 ||
+          item.role.toLowerCase().indexOf(query) !== -1 ||
+          item.wilayah.toLowerCase().indexOf(query) !== -1 ||
+          item.noHp.toLowerCase().indexOf(query) !== -1
+        );
+      });
+      renderStaffTable(filteredStaff);
+    }
+  }
+
+  function clearUserSearch() {
+    var searchInput = document.getElementById('filter-fse-search');
+    var clearBtn = document.getElementById('btn-clear-fse-search');
+    if (searchInput) searchInput.value = '';
+    if (clearBtn) clearBtn.classList.add('hidden');
+    if (currentUserTab === 'fse') renderFSETable(currentFSEList);
+    else renderStaffTable(cachedUsersList);
+  }
+
+  function openCreateUserModal() {
+    var form = document.getElementById('form-new-user');
+    if (form) form.reset();
+
+    var roleSelect = document.getElementById('input-user-role');
+    if (roleSelect) {
+      // Set default sesuai tab yang aktif saat ini
+      roleSelect.value = (currentUserTab === 'staff') ? 'Monitoring' : 'FSE';
+      handleUserRoleChange(roleSelect.value);
+    }
+
+    var modal = document.getElementById('modal-create-user');
+    if (modal) modal.classList.remove('hidden');
+  }
+
+  function closeCreateUserModal() {
+    var modal = document.getElementById('modal-create-user');
+    if (modal) modal.classList.add('hidden');
+  }
+
+  function handleUserRoleChange(roleValue) {
+    var containerFseFields = document.getElementById('container-user-fse-fields');
+    var inputMesin = document.getElementById('input-user-mesin');
+    if (!containerFseFields) return;
+
+    if (roleValue === 'FSE') {
+      containerFseFields.classList.remove('hidden');
+      if (inputMesin) inputMesin.required = true;
+    } else {
+      containerFseFields.classList.add('hidden');
+      if (inputMesin) {
+        inputMesin.required = false;
+        inputMesin.value = '0';
+      }
+    }
+  }
+
+  function handleCreateUserSubmit(event) {
+    if (event) event.preventDefault();
+
+    var role = document.getElementById('input-user-role').value;
+    var nama = document.getElementById('input-user-nama').value.trim();
+    var noHp = document.getElementById('input-user-hp').value.trim();
+    var password = document.getElementById('input-user-password').value.trim();
+    var wilayah = document.getElementById('input-user-wilayah').value.trim();
+    var kelolaanMesin = parseInt(document.getElementById('input-user-mesin').value, 10) || 0;
+
+    var payload = {
+      role: role,
+      nama: nama,
+      noHp: noHp,
+      password: password,
+      wilayah: wilayah,
+      kelolaanMesin: kelolaanMesin
+    };
+
+    var btnSubmit = document.getElementById('btn-submit-user');
+    if (btnSubmit) {
+      btnSubmit.disabled = true;
+      btnSubmit.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Menyimpan Akun...';
+    }
+
+    if (typeof google !== 'undefined' && google.script && google.script.run) {
+      google.script.run
+        .withSuccessHandler(function(res) {
+          if (btnSubmit) {
+            btnSubmit.disabled = false;
+            btnSubmit.innerHTML = '<i class="fa-solid fa-save"></i> <span>Simpan Akun</span>';
+          }
+          closeCreateUserModal();
+
+          if (res && res.status === 'success') {
+            showToast('Akun Didaftarkan', res.message, 'success');
+            loadSectionAuxiliaryData('FSE');
+            loadUsersData();
+            loadDropdowns();
+          } else {
+            showToast('Gagal Daftar', res ? res.message : 'Error server', 'error');
+          }
+        })
+        .withFailureHandler(function(err) {
+          if (btnSubmit) {
+            btnSubmit.disabled = false;
+            btnSubmit.innerHTML = '<i class="fa-solid fa-save"></i> <span>Simpan Akun</span>';
+          }
+          showToast('Error Server', 'Kendala server: ' + err, 'error');
+        })
+        .registerUser(payload, currentUser);
+    } else {
+      setTimeout(function() {
+        if (btnSubmit) {
+          btnSubmit.disabled = false;
+          btnSubmit.innerHTML = '<i class="fa-solid fa-save"></i> <span>Simpan Akun</span>';
+        }
+        closeCreateUserModal();
+        showToast('Akun Didaftarkan (Demo)', 'Akun ' + role + ' atas nama ' + nama + ' siap digunakan.', 'success');
+        loadUsersData();
+      }, 500);
+    }
+  }
+
+  function loadUsersData() {
+    var tbody = document.getElementById('staff-table-body');
+    if (tbody) {
+      tbody.innerHTML = '<tr><td colspan="8" class="text-center py-8 text-slate-400 font-mono text-xs"><i class="fa-solid fa-spinner fa-spin text-teal-600 mr-2 text-base"></i>Memuat daftar akun Monitoring &amp; Super Admin...</td></tr>';
+    }
+
+    if (typeof google !== 'undefined' && google.script && google.script.run) {
+      google.script.run
+        .withSuccessHandler(function(res) {
+          if (res && res.status === 'success') {
+            cachedUsersList = res.data || [];
+            renderStaffTable(cachedUsersList);
+          } else {
+            if (tbody) tbody.innerHTML = '<tr><td colspan="8" class="text-center py-6 text-rose-500 text-xs font-semibold">Gagal memuat: ' + (res ? res.message : 'Error') + '</td></tr>';
+          }
+        })
+        .withFailureHandler(function(err) {
+          if (tbody) tbody.innerHTML = '<tr><td colspan="8" class="text-center py-6 text-rose-500 text-xs font-semibold">Kendala server: ' + err + '</td></tr>';
+        })
+        .getUsersData();
+    }
+  }
+
+  function renderStaffTable(list) {
+    var tbody = document.getElementById('staff-table-body');
+    if (!tbody) return;
+
+    if (!list || list.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="8" class="text-center py-8 text-slate-400 font-mono text-xs"><i class="fa-solid fa-users-slash text-2xl mb-1.5 block text-slate-300"></i>Belum ada akun staff terdaftar di database.</td></tr>';
+      return;
+    }
+
+    var isMonitoring = (currentUser && (currentUser.roleKey === 'monitoring' || currentUser.roleKey === 'admin'));
+    var html = '';
+
+    for (var i = 0; i < list.length; i++) {
+      var u = list[i];
+      var roleLower = String(u.role || '').toLowerCase();
+      var roleBadge = '<span class="px-2 py-0.5 rounded-md font-bold text-[10px] bg-slate-100 text-slate-700 border border-slate-200">' + escapeHtml(u.role) + '</span>';
+
+      if (roleLower.indexOf('admin') !== -1) {
+        roleBadge = '<span class="px-2 py-0.5 rounded-md font-bold text-[10px] bg-purple-50 text-purple-700 border border-purple-200 flex items-center gap-1 inline-flex"><i class="fa-solid fa-user-shield text-[9px]"></i>Super Admin</span>';
+      } else if (roleLower.indexOf('monitoring') !== -1 || roleLower.indexOf('noc') !== -1) {
+        roleBadge = '<span class="px-2 py-0.5 rounded-md font-bold text-[10px] bg-indigo-50 text-indigo-700 border border-indigo-200 flex items-center gap-1 inline-flex"><i class="fa-solid fa-desktop text-[9px]"></i>Monitoring</span>';
+      } else if (roleLower.indexOf('fse') !== -1) {
+        roleBadge = '<span class="px-2 py-0.5 rounded-md font-bold text-[10px] bg-teal-50 text-teal-700 border border-teal-200 flex items-center gap-1 inline-flex"><i class="fa-solid fa-user-gear text-[9px]"></i>FSE</span>';
+      }
+
+      var isAct = (u.status === 'Aktif');
+      var statusColor = isAct ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-rose-50 text-rose-700 border-rose-200';
+
+      html += '<tr class="hover:bg-white/80 transition">';
+      html += '<td class="p-3 font-mono font-bold text-teal-800 whitespace-nowrap">' + escapeHtml(u.userId) + '</td>';
+      html += '<td class="p-3 font-semibold text-slate-800 whitespace-nowrap">' + escapeHtml(u.nama) + '</td>';
+      html += '<td class="p-3 whitespace-nowrap">' + roleBadge + '</td>';
+      html += '<td class="p-3 font-mono text-slate-600 whitespace-nowrap text-xs">' + escapeHtml(u.noHp) + '</td>';
+      html += '<td class="p-3 text-slate-600 whitespace-nowrap">' + escapeHtml(u.wilayah || '-') + '</td>';
+      html += '<td class="p-3 text-slate-500 font-mono text-[10.5px] whitespace-nowrap">' + escapeHtml(u.createdBy || 'System') + '</td>';
+      html += '<td class="p-3 text-center whitespace-nowrap"><span class="px-2.5 py-0.5 rounded-full text-[10px] font-semibold border ' + statusColor + '">' + escapeHtml(u.status) + '</span></td>';
+      
+      html += '<td class="p-3 text-center whitespace-nowrap">';
+      if (isMonitoring) {
+        html += '<button onclick="toggleUserStatusAction(\'' + escapeHtml(u.userId) + '\', \'' + escapeHtml(u.status) + '\')" title="Ubah Status Aktif/Nonaktif Akun" class="px-2.5 py-1 text-[11px] rounded-lg ' + (isAct ? 'bg-rose-50 text-rose-700 hover:bg-rose-600 hover:text-white border border-rose-200' : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-600 hover:text-white border border-emerald-200') + ' transition flex items-center justify-center gap-1 mx-auto shadow-sm font-semibold">';
+        html += '<i class="fa-solid ' + (isAct ? 'fa-ban' : 'fa-check') + ' text-[10px]"></i> ' + (isAct ? 'Nonaktifkan' : 'Aktifkan');
+        html += '</button>';
+      } else {
+        html += '<span class="text-slate-400 text-[10px]">Read-only</span>';
+      }
+      html += '</td>';
+      html += '</tr>';
+    }
+
+    tbody.innerHTML = html;
+  }
+
+  function toggleUserStatusAction(userId, currentStatus) {
+    if (typeof google !== 'undefined' && google.script && google.script.run) {
+      google.script.run
+        .withSuccessHandler(function(res) {
+          if (res && res.status === 'success') {
+            showToast('Status Diubah', res.message, 'success');
+            loadSectionAuxiliaryData('FSE');
+            loadUsersData();
+          } else {
+            showToast('Gagal Ubah Status', res ? res.message : 'Error server', 'error');
+          }
+        })
+        .withFailureHandler(function(err) {
+          showToast('Error Server', 'Kendala server: ' + err, 'error');
+        })
+        .toggleUserStatus(userId, currentStatus, currentUser);
+    }
+  }
+
+  // Menjaga kompatibilitas jika masih ada tombol lama yang memanggil openCreateFSEModal
+  function openCreateFSEModal() {
+    openCreateUserModal();
+  }
+  function closeCreateFSEModal() {
+    closeCreateUserModal();
   }
 
   function renderDashboardRecent(tickets) {
@@ -302,15 +804,35 @@
   }
 
   function loadSectionAuxiliaryData(section) {
+    if (section === 'DataPM') {
+      if (typeof loadPMDataMonitoring === 'function') {
+        loadPMDataMonitoring();
+      }
+      return;
+    }
+
+    if (section === 'SLAAchievement') {
+      loadSLAAchievementData();
+      return;
+    }
+
+    if (section === 'ReportingFSE') {
+      loadFSEReportingData();
+      return;
+    }
+
+    if (section === 'Users') {
+      loadUsersData();
+      return;
+    }
+
     if (typeof google !== 'undefined' && google.script && google.script.run) {
       google.script.run
         .withSuccessHandler(function(res) {
           if (res && res.status === 'success') {
             if (section === 'FSE') { currentFSEList = res.data || []; renderFSETable(currentFSEList); }
-            if (section === 'DataPM') { currentPMList = res.data || []; renderPMTable(currentPMList); }
             if (section === 'DatabaseMesin') renderMachinesTable(res.data);
             if (section === 'DatabaseCustomer') renderCustomersTable(res.data);
-            if (section === 'ReportingFSE') renderReportingCards(res.data);
           }
         })
         .getSectionData(section);
@@ -322,7 +844,7 @@
     if (!tbody) return;
 
     if (!list || list.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="8" class="text-center py-8 text-slate-400 font-mono text-xs">Tidak ada data teknisi terdaftar.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="9" class="text-center py-8 text-slate-400 font-mono text-xs">Tidak ada data teknisi terdaftar.</td></tr>';
       return;
     }
 
@@ -335,7 +857,8 @@
 
       html += '<tr class="hover:bg-white/80 transition">';
       html += '<td class="p-3 font-mono font-bold text-teal-700 whitespace-nowrap">' + escapeHtml(item.userId) + '</td>';
-      html += '<td class="p-3"><div class="font-semibold text-slate-800">' + escapeHtml(item.nama) + '</div><div class="text-[10px] text-slate-400 font-mono">' + escapeHtml(item.noHp) + '</div></td>';
+      html += '<td class="p-3 font-semibold text-slate-800 whitespace-nowrap">' + escapeHtml(item.nama) + '</td>';
+      html += '<td class="p-3 font-mono text-slate-600 whitespace-nowrap text-xs">' + escapeHtml(item.noHp) + '</td>';
       html += '<td class="p-3 text-slate-600 whitespace-nowrap">' + escapeHtml(item.wilayah) + '</td>';
       html += '<td class="p-3 text-center font-mono font-bold text-slate-700 whitespace-nowrap">' + (item.jumlahMesin || 0) + ' Mesin</td>';
       html += '<td class="p-3 text-center font-mono font-semibold text-rose-600 whitespace-nowrap">' + (item.totalCM || 0) + ' Tiket</td>';
@@ -359,60 +882,11 @@
   }
 
   function handleFSESearchInput() {
-    var query = document.getElementById('filter-fse-search').value.toLowerCase().trim();
-    var clearBtn = document.getElementById('btn-clear-fse-search');
-
-    if (clearBtn) {
-      if (query !== '') clearBtn.classList.remove('hidden');
-      else clearBtn.classList.add('hidden');
-    }
-
-    var filtered = currentFSEList.filter(function(item) {
-      if (!query) return true;
-      return (
-        item.userId.toLowerCase().indexOf(query) !== -1 ||
-        item.nama.toLowerCase().indexOf(query) !== -1 ||
-        item.wilayah.toLowerCase().indexOf(query) !== -1 ||
-        item.noHp.toLowerCase().indexOf(query) !== -1
-      );
-    });
-
-    renderFSETable(filtered);
+    handleUserSearchInput();
   }
 
   function clearFSESearch() {
-    var searchInput = document.getElementById('filter-fse-search');
-    var clearBtn = document.getElementById('btn-clear-fse-search');
-    if (searchInput) searchInput.value = '';
-    if (clearBtn) clearBtn.classList.add('hidden');
-    renderFSETable(currentFSEList);
-  }
-
-  function openCreateFSEModal() {
-    document.getElementById('form-new-fse').reset();
-    document.getElementById('modal-create-fse').classList.remove('hidden');
-  }
-  function closeCreateFSEModal() { document.getElementById('modal-create-fse').classList.add('hidden'); }
-
-  function handleCreateFSESubmit(e) {
-    e.preventDefault();
-    var payload = {
-      nama: document.getElementById('input-fse-nama').value.trim(),
-      noHp: document.getElementById('input-fse-hp').value.trim(),
-      password: document.getElementById('input-fse-password').value.trim(),
-      wilayah: document.getElementById('input-fse-wilayah').value.trim(),
-      kelolaanMesin: parseInt(document.getElementById('input-fse-mesin').value, 10) || 0
-    };
-    closeCreateFSEModal();
-    if (typeof google !== 'undefined' && google.script && google.script.run) {
-      google.script.run
-        .withSuccessHandler(function(res) {
-          showToast('FSE Didaftarkan', res.message, 'success');
-          loadSectionAuxiliaryData('FSE');
-          loadDropdowns();
-        })
-        .registerFSE(payload, currentUser);
-    }
+    clearUserSearch();
   }
 
   function openEditFSEModal(userId) {
@@ -451,83 +925,120 @@
   }
 
   function toggleFSEStatusAction(userId, currentStatus) {
-    if (typeof google !== 'undefined' && google.script && google.script.run) {
-      google.script.run
-        .withSuccessHandler(function(res) {
-          showToast('Status Diubah', res.message, 'success');
-          loadSectionAuxiliaryData('FSE');
-        })
-        .toggleFSEStatus(userId, currentStatus, currentUser);
-    }
-  }
-
-  function renderPMTable(list) {
-    var tbody = document.getElementById('pm-table-body');
-    if (!tbody) return;
-
-    if (!list || list.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="9" class="text-center py-8 text-slate-400 font-mono text-xs">Tidak ada data Preventive Maintenance.</td></tr>';
-      return;
-    }
-
-    var html = '';
-    for (var i = 0; i < list.length; i++) {
-      var item = list[i];
-      html += '<tr class="hover:bg-white/80 transition">';
-      html += '<td class="p-3 font-mono font-bold text-teal-700 whitespace-nowrap">' + escapeHtml(item.idPM) + '</td>';
-      html += '<td class="p-3"><div class="font-semibold text-slate-800">' + escapeHtml(item.bank) + '</div><div class="text-[11px] text-slate-500 font-mono">' + escapeHtml(item.serialNumber) + ' (' + escapeHtml(item.idMesin) + ')</div></td>';
-      html += '<td class="p-3 text-slate-600 max-w-xs truncate">' + escapeHtml(item.lokasi) + '</td>';
-      html += '<td class="p-3 whitespace-nowrap font-mono text-slate-700">' + escapeHtml(item.periode) + '</td>';
-      html += '<td class="p-3 whitespace-nowrap font-mono text-slate-600">' + escapeHtml(item.tanggalRencana) + '</td>';
-      html += '<td class="p-3 whitespace-nowrap font-mono text-slate-800 font-semibold">' + escapeHtml(item.tanggalRealisasi) + '</td>';
-      html += '<td class="p-3 whitespace-nowrap"><span class="px-2 py-0.5 rounded-lg bg-slate-100 border border-slate-200 text-slate-700">' + escapeHtml(item.engineer) + '</span></td>';
-      html += '<td class="p-3 whitespace-nowrap"><span class="px-2.5 py-0.5 rounded-full text-[10px] font-semibold border bg-emerald-50 text-emerald-700 border-emerald-200">' + escapeHtml(item.status) + '</span></td>';
-      html += '<td class="p-3 max-w-xs text-[11px] text-slate-500 truncate">' + escapeHtml(item.catatan || '-') + '</td>';
-      html += '</tr>';
-    }
-    tbody.innerHTML = html;
-  }
-
-  function filterPMTableClientSide() {
-    var s = (document.getElementById('filter-pm-search').value || '').toLowerCase().trim();
-    var st = (document.getElementById('filter-pm-status').value || 'ALL').trim();
-
-    var filtered = currentPMList.filter(function(item) {
-      if (st !== 'ALL' && item.status.toLowerCase() !== st.toLowerCase()) return false;
-      if (s !== '') {
-        return (
-          item.idPM.toLowerCase().indexOf(s) !== -1 ||
-          item.bank.toLowerCase().indexOf(s) !== -1 ||
-          item.serialNumber.toLowerCase().indexOf(s) !== -1 ||
-          item.idMesin.toLowerCase().indexOf(s) !== -1 ||
-          item.lokasi.toLowerCase().indexOf(s) !== -1 ||
-          item.engineer.toLowerCase().indexOf(s) !== -1
-        );
-      }
-      return true;
-    });
-
-    renderPMTable(filtered);
+    toggleUserStatusAction(userId, currentStatus);
   }
 
   function renderMachinesTable(list) {
     var tbody = document.getElementById('machines-table-body');
     if (!tbody) return;
 
+    if (!list || list.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="7" class="text-center py-6 text-slate-400 text-xs font-mono">Belum ada data mesin ATM.</td></tr>';
+      return;
+    }
+
+    var isMonitoring = (currentUser && (currentUser.roleKey === 'monitoring' || currentUser.roleKey === 'admin'));
+
+    var engList = [];
+    if (cachedDropdowns && cachedDropdowns.engineers && cachedDropdowns.engineers.length > 0) {
+      engList = cachedDropdowns.engineers;
+    } else if (currentFSEList && currentFSEList.length > 0) {
+      engList = currentFSEList;
+    }
+
     var html = '';
-    for (var i = 0; i < (list || []).length; i++) {
+    for (var i = 0; i < list.length; i++) {
       var m = list[i];
+      var rawStatus = String(m.status || 'Active').trim();
+      var isAct = (rawStatus.toLowerCase() === 'active');
+      var currentFseVal = String(m.fsePengelola || '-').trim();
+
       html += '<tr class="hover:bg-white/80 transition">';
-      html += '<td class="p-3 font-mono font-bold text-teal-700">' + escapeHtml(m.idMesin) + '</td>';
-      html += '<td class="p-3 font-mono text-slate-800 font-medium">' + escapeHtml(m.serialNumber) + '</td>';
-      html += '<td class="p-3 text-slate-700">' + escapeHtml(m.bank) + '</td>';
-      html += '<td class="p-3 text-slate-600">' + escapeHtml(m.lokasi) + '</td>';
-      html += '<td class="p-3 text-slate-500">' + escapeHtml(m.tipe) + '</td>';
-      html += '<td class="p-3"><span class="px-2.5 py-0.5 rounded-full text-[10px] bg-emerald-50 border border-emerald-200 text-emerald-700 font-semibold">' + escapeHtml(m.status) + '</span></td>';
-      html += '<td class="p-3 font-semibold text-teal-800 whitespace-nowrap">' + escapeHtml(m.fsePengelola || '-') + '</td>';
+      html += '<td class="p-3 font-mono font-bold text-teal-700 whitespace-nowrap">' + escapeHtml(m.idMesin) + '</td>';
+      html += '<td class="p-3 font-mono text-slate-800 font-semibold whitespace-nowrap">' + escapeHtml(m.serialNumber) + '</td>';
+      html += '<td class="p-3 font-semibold text-slate-800 whitespace-nowrap">' + escapeHtml(m.bank) + '</td>';
+      html += '<td class="p-3 text-slate-600 max-w-xs truncate" title="' + escapeHtml(m.lokasi) + '">' + escapeHtml(m.lokasi) + '</td>';
+      html += '<td class="p-3 text-slate-500 whitespace-nowrap">' + escapeHtml(m.tipe) + '</td>';
+
+      html += '<td class="p-3 whitespace-nowrap">';
+      if (isMonitoring) {
+        var statusColor = isAct ? 'text-emerald-700 bg-emerald-50 border-emerald-300' : 'text-rose-700 bg-rose-50 border-rose-300';
+        html += '<select onchange="handleMachineStatusChange(\'' + escapeHtml(m.idMesin) + '\', \'' + escapeHtml(m.serialNumber) + '\', this.value)" class="soft-input px-2.5 py-1 rounded-xl text-[11px] font-bold ' + statusColor + ' cursor-pointer border shadow-sm outline-none focus:ring-2 focus:ring-teal-300">';
+        html += '<option value="Active" ' + (isAct ? 'selected' : '') + '>Active</option>';
+        html += '<option value="Inactive" ' + (!isAct ? 'selected' : '') + '>Inactive</option>';
+        html += '</select>';
+      } else {
+        html += '<span class="px-2.5 py-0.5 rounded-full text-[10px] ' + (isAct ? 'bg-emerald-50 border border-emerald-200 text-emerald-700' : 'bg-rose-50 border border-rose-200 text-rose-700') + ' font-semibold">' + escapeHtml(rawStatus) + '</span>';
+      }
+      html += '</td>';
+
+      html += '<td class="p-3 whitespace-nowrap">';
+      if (isMonitoring) {
+        html += '<select onchange="handleMachineFSEChange(\'' + escapeHtml(m.idMesin) + '\', \'' + escapeHtml(m.serialNumber) + '\', this.value)" class="soft-input px-2.5 py-1 rounded-xl text-[11px] font-bold text-teal-900 bg-white border border-teal-300 hover:border-teal-500 focus:ring-2 focus:ring-teal-200 cursor-pointer shadow-sm min-w-[160px]">';
+        html += '<option value="-">-- Belum Ditugaskan --</option>';
+        
+        for (var e = 0; e < engList.length; e++) {
+          var engItem = engList[e];
+          var engName = String(engItem.nama || engItem).trim();
+          var isSelected = (currentFseVal.toLowerCase() === engName.toLowerCase());
+          html += '<option value="' + escapeHtml(engName) + '" ' + (isSelected ? 'selected' : '') + '>' + escapeHtml(engName) + '</option>';
+        }
+        
+        if (currentFseVal && currentFseVal !== '-' && !engList.some(function(item){ return String(item.nama || item).toLowerCase() === currentFseVal.toLowerCase(); })) {
+          html += '<option value="' + escapeHtml(currentFseVal) + '" selected>' + escapeHtml(currentFseVal) + '</option>';
+        }
+
+        html += '</select>';
+      } else {
+        html += '<span class="font-semibold text-teal-800 text-xs">' + escapeHtml(currentFseVal) + '</span>';
+      }
+      html += '</td>';
+
       html += '</tr>';
     }
     tbody.innerHTML = html;
+  }
+
+  function handleMachineFSEChange(idMesin, serialNumber, newFse) {
+    showToast('Memperbarui FSE', 'Menugaskan FSE ' + (newFse === '-' ? 'Kosong' : newFse) + ' ke ATM ' + (idMesin || serialNumber) + '...', 'success');
+
+    if (typeof google !== 'undefined' && google.script && google.script.run) {
+      google.script.run
+        .withSuccessHandler(function(res) {
+          if (res && res.status === 'success') {
+            showToast('FSE Diperbarui', res.message, 'success');
+            loadDropdowns();
+            loadSectionAuxiliaryData('FSE');
+          } else {
+            showToast('Gagal Simpan', res ? res.message : 'Error update', 'error');
+          }
+        })
+        .withFailureHandler(function(err) {
+          showToast('Error Server', 'Kendala server: ' + err, 'error');
+        })
+        .updateMachineAssignment(idMesin, serialNumber, newFse, null);
+    }
+  }
+
+  function handleMachineStatusChange(idMesin, serialNumber, newStatus) {
+    showToast('Memperbarui Status', 'Mengubah status ATM ' + (idMesin || serialNumber) + ' ke ' + newStatus + '...', 'success');
+
+    if (typeof google !== 'undefined' && google.script && google.script.run) {
+      google.script.run
+        .withSuccessHandler(function(res) {
+          if (res && res.status === 'success') {
+            showToast('Status Diperbarui', res.message, 'success');
+            loadDropdowns();
+            loadSectionAuxiliaryData('DatabaseMesin');
+          } else {
+            showToast('Gagal Simpan', res ? res.message : 'Error update', 'error');
+          }
+        })
+        .withFailureHandler(function(err) {
+          showToast('Error Server', 'Kendala server: ' + err, 'error');
+        })
+        .updateMachineAssignment(idMesin, serialNumber, null, newStatus);
+    }
   }
 
   function renderCustomersTable(list) {
@@ -549,26 +1060,345 @@
     tbody.innerHTML = html;
   }
 
+  function loadFSEReportingData(filterMonth) {
+    var monthEl = document.getElementById('filter-reporting-month');
+    if (monthEl && !monthEl.value) {
+      var now = new Date();
+      var yr = now.getFullYear();
+      var mo = ('0' + (now.getMonth() + 1)).slice(-2);
+      monthEl.value = yr + '-' + mo;
+    }
+
+    var selectedMonth = filterMonth || (monthEl ? monthEl.value : '');
+
+    var cardsCont = document.getElementById('reporting-cards-container');
+    var leaderTbody = document.getElementById('fse-leaderboard-table-body');
+
+    if (cardsCont) {
+      cardsCont.innerHTML = '<div class="col-span-3 text-center py-8 text-slate-400 font-mono text-xs"><i class="fa-solid fa-spinner fa-spin text-teal-600 mr-2 text-base"></i>Mengkalkulasi produktivitas riil FSE &amp; kepatuhan pengumpulan FE Report...</div>';
+    }
+    if (leaderTbody) {
+      leaderTbody.innerHTML = '<tr><td colspan="10" class="text-center py-8 text-slate-400 font-mono text-xs"><i class="fa-solid fa-spinner fa-spin text-teal-600 mr-2 text-base"></i>Memperbarui leaderboard performa seluruh teknisi...</td></tr>';
+    }
+
+    if (typeof google !== 'undefined' && google.script && google.script.run) {
+      google.script.run
+        .withSuccessHandler(function(res) {
+          if (res && res.status === 'success') {
+            cachedFSEReportingData = res.data || [];
+            renderReportingCards(cachedFSEReportingData);
+            renderFSELeaderboard(cachedFSEReportingData);
+          } else {
+            if (cardsCont) cardsCont.innerHTML = '<div class="col-span-3 text-center py-6 text-rose-500 text-xs">Gagal memuat reporting: ' + (res ? res.message : 'Error') + '</div>';
+            if (leaderTbody) leaderTbody.innerHTML = '<tr><td colspan="10" class="text-center py-6 text-rose-500 text-xs">Gagal memuat data.</td></tr>';
+          }
+        })
+        .withFailureHandler(function(err) {
+          showToast('Error Server', 'Kendala server: ' + err, 'error');
+          if (cardsCont) cardsCont.innerHTML = '<div class="col-span-3 text-center py-6 text-rose-500 text-xs">Error backend: ' + err + '</div>';
+          if (leaderTbody) leaderTbody.innerHTML = '<tr><td colspan="10" class="text-center py-6 text-rose-500 text-xs">Error backend: ' + err + '</td></tr>';
+        })
+        .getFSEReportingData(selectedMonth);
+    }
+  }
+
   function renderReportingCards(list) {
     var container = document.getElementById('reporting-cards-container');
     if (!container) return;
 
+    if (!list || list.length === 0) {
+      container.innerHTML = '<div class="col-span-3 text-center py-8 text-slate-400 font-mono text-xs">Belum ada data penugasan FSE pada periode ini.</div>';
+      return;
+    }
+
     var html = '';
-    for (var i = 0; i < (list || []).length; i++) {
+    for (var i = 0; i < list.length; i++) {
       var eng = list[i];
-      html += '<div class="soft-card-panel p-4">';
-      html += '<div class="flex justify-between items-center mb-3">';
-      html += '<span class="font-bold text-sm text-slate-800">' + escapeHtml(eng.nama) + '</span>';
-      html += '<span class="text-xs text-teal-700 font-mono font-semibold">' + escapeHtml(eng.completionRate || '100%') + ' Rate</span>';
+      var rateNum = eng.completionRateNum !== undefined ? eng.completionRateNum : 100;
+      var rateDisplay = eng.completionRate || (rateNum + '%');
+
+      var barColor = 'from-teal-500 to-emerald-500';
+      if (rateNum < 70) barColor = 'from-rose-500 to-amber-500';
+      else if (rateNum < 85) barColor = 'from-amber-500 to-teal-500';
+
+      var feRateNum = eng.feComplianceRateNum !== undefined ? eng.feComplianceRateNum : 100;
+      var feRateDisplay = eng.feComplianceRate || (feRateNum + '%');
+
+      html += '<div onclick="openFSEPerformanceModal(\'' + escapeHtml(eng.userId) + '\')" title="Klik untuk melihat rincian tiket, jam MTTR, &amp; audit FE Report ' + escapeHtml(eng.nama) + '" class="soft-card-panel p-4 cursor-pointer hover:border-teal-500 hover:shadow-md transition group select-none relative overflow-hidden bg-white/90 border border-slate-200/90">';
+      
+      html += '<div class="flex justify-between items-start mb-2 pb-2 border-b border-slate-100">';
+      html += '<div>';
+      html += '<span class="font-bold text-sm text-slate-800 group-hover:text-teal-700 transition flex items-center gap-1.5">' + escapeHtml(eng.nama) + '</span>';
+      html += '<span class="text-[10px] text-slate-400 font-mono">' + escapeHtml(eng.wilayah || 'Jabodetabek') + '</span>';
       html += '</div>';
-      html += '<div class="space-y-2 text-xs text-slate-600">';
-      html += '<div class="flex justify-between"><span>Tiket Ditugaskan:</span><span class="font-bold text-slate-800">' + (eng.totalAssigned || 0) + ' Tiket</span></div>';
-      html += '<div class="flex justify-between"><span>Tiket Selesai:</span><span class="font-bold text-emerald-600">' + (eng.totalSolving || 0) + ' Tiket</span></div>';
-      html += '<div class="flex justify-between"><span>Rata-rata Resolusi:</span><span class="font-mono text-slate-800">' + escapeHtml(eng.avgResolutionTime || '2.4 Jam') + '</span></div>';
+      html += '<div class="text-right">';
+      html += '<span class="text-xs text-teal-700 font-mono font-extrabold block">' + escapeHtml(rateDisplay) + '</span>';
+      html += '<span class="text-[9px] text-slate-400 font-medium">Completion</span>';
       html += '</div>';
+      html += '</div>';
+
+      html += '<div class="h-1.5 w-full bg-slate-100 rounded-full my-2 overflow-hidden">';
+      html += '<div class="h-full bg-gradient-to-r ' + barColor + ' rounded-full transition-all duration-500" style="width: ' + Math.min(100, Math.max(5, rateNum)) + '%;"></div>';
+      html += '</div>';
+
+      html += '<div class="space-y-1 text-xs text-slate-600 pt-1">';
+      html += '<div class="flex justify-between"><span class="text-slate-400">Tiket Ditugaskan:</span><span class="font-bold text-slate-800 font-mono">' + (eng.totalAssigned || 0) + ' Tiket</span></div>';
+      html += '<div class="flex justify-between"><span class="text-slate-400">Tiket Selesai:</span><span class="font-bold text-emerald-700 font-mono">' + (eng.totalSolving || 0) + ' Tiket</span></div>';
+      html += '<div class="flex justify-between"><span class="text-slate-400">Kepatuhan FE Report:</span><span class="font-bold text-indigo-700 font-mono">' + escapeHtml(feRateDisplay) + ' (' + (eng.feOnTime || 0) + ' Tepat / ' + (eng.feLate || 0) + ' Telat)</span></div>';
+      html += '<div class="flex justify-between"><span class="text-slate-400">Rata-rata Resolusi:</span><span class="font-mono font-bold text-amber-700">' + escapeHtml(eng.avgResolutionTime || '0 Menit') + '</span></div>';
+      html += '</div>';
+
+      html += '<div class="mt-3 pt-2 border-t border-slate-100 flex items-center justify-between text-[10px] text-teal-700 font-bold group-hover:text-teal-900">';
+      html += '<span class="flex items-center gap-1"><i class="fa-solid fa-list-check text-[9px]"></i> Rincian &amp; Audit Tiket / FE</span>';
+      html += '<i class="fa-solid fa-arrow-up-right-from-square text-[9px] group-hover:translate-x-0.5 transition-transform"></i>';
+      html += '</div>';
+
       html += '</div>';
     }
     container.innerHTML = html;
+  }
+
+  function renderFSELeaderboard(list) {
+    var tbody = document.getElementById('fse-leaderboard-table-body');
+    if (!tbody) return;
+
+    if (!list || list.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="10" class="text-center py-6 text-slate-400 font-mono text-xs">Belum ada data FSE.</td></tr>';
+      return;
+    }
+
+    var html = '';
+    for (var i = 0; i < list.length; i++) {
+      var item = list[i];
+      var rank = i + 1;
+      var rankBadge = '<span class="w-6 h-6 rounded-full bg-slate-100 text-slate-700 font-mono font-bold text-xs flex items-center justify-center mx-auto">' + rank + '</span>';
+      if (rank === 1) rankBadge = '<span class="w-6 h-6 rounded-full bg-amber-100 text-amber-900 border border-amber-300 font-mono font-bold text-xs flex items-center justify-center mx-auto shadow-sm">🥇</span>';
+      else if (rank === 2) rankBadge = '<span class="w-6 h-6 rounded-full bg-slate-200 text-slate-800 font-mono font-bold text-xs flex items-center justify-center mx-auto">🥈</span>';
+      else if (rank === 3) rankBadge = '<span class="w-6 h-6 rounded-full bg-amber-50 text-amber-800 border border-amber-200 font-mono font-bold text-xs flex items-center justify-center mx-auto">🥉</span>';
+
+      var gradeBadgeClass = item.gradeBadgeClass || 'bg-emerald-50 text-emerald-700 border-emerald-200';
+      var feRateNum = item.feComplianceRateNum !== undefined ? item.feComplianceRateNum : 100;
+      var feColor = feRateNum >= 80 ? 'text-emerald-700' : (feRateNum >= 65 ? 'text-amber-700' : 'text-rose-700');
+
+      html += '<tr class="hover:bg-white/80 transition">';
+      html += '<td class="p-3 text-center">' + rankBadge + '</td>';
+      html += '<td class="p-3 whitespace-nowrap"><div class="font-bold text-slate-800">' + escapeHtml(item.nama) + '</div><div class="text-[10px] text-slate-400 font-mono">' + escapeHtml(item.wilayah) + ' • ' + escapeHtml(item.userId) + '</div></td>';
+      html += '<td class="p-3 text-center font-mono font-bold text-slate-700 whitespace-nowrap">' + (item.jumlahMesin || 0) + ' Mesin</td>';
+      html += '<td class="p-3 text-center font-mono font-semibold text-slate-800 whitespace-nowrap">' + (item.totalAssigned || 0) + ' Tiket</td>';
+      html += '<td class="p-3 text-center font-mono font-extrabold text-emerald-700 whitespace-nowrap">' + (item.totalSolving || 0) + ' Tiket</td>';
+      html += '<td class="p-3 text-center font-mono font-extrabold text-teal-800 whitespace-nowrap">' + escapeHtml(item.completionRate) + '</td>';
+      html += '<td class="p-3 text-center whitespace-nowrap"><div class="font-mono font-extrabold ' + feColor + '">' + escapeHtml(item.feComplianceRate) + '</div><div class="text-[10px] text-slate-400 font-mono">' + (item.feOnTime || 0) + ' Tepat • ' + (item.feLate || 0) + ' Telat</div></td>';
+      html += '<td class="p-3 text-center font-mono font-bold text-amber-700 whitespace-nowrap">' + escapeHtml(item.avgResolutionTime || '-') + '</td>';
+      html += '<td class="p-3 text-center whitespace-nowrap"><span class="px-2 py-0.5 rounded-full text-[10px] font-bold border ' + gradeBadgeClass + '">' + escapeHtml(item.grade || 'Grade A') + '</span></td>';
+      html += '<td class="p-3 text-center whitespace-nowrap">';
+      html += '<button onclick="openFSEPerformanceModal(\'' + escapeHtml(item.userId) + '\')" title="Lihat audit detail tiket &amp; pengumpulan FE Report" class="px-2.5 py-1 rounded-lg bg-teal-50 hover:bg-teal-600 hover:text-white text-teal-700 border border-teal-200 font-semibold text-[11px] transition shadow-sm flex items-center gap-1 mx-auto">';
+      html += '<i class="fa-solid fa-list-check text-[10px]"></i> Rincian';
+      html += '</button>';
+      html += '</td>';
+      html += '</tr>';
+    }
+
+    tbody.innerHTML = html;
+  }
+
+  function filterFSELeaderboardClientSide() {
+    var q = (document.getElementById('filter-reporting-search') ? document.getElementById('filter-reporting-search').value : '').toLowerCase().trim();
+    if (!cachedFSEReportingData) return;
+
+    var filtered = cachedFSEReportingData.filter(function(item) {
+      if (!query) return true;
+      return (
+        item.nama.toLowerCase().indexOf(q) !== -1 ||
+        item.wilayah.toLowerCase().indexOf(q) !== -1 ||
+        item.userId.toLowerCase().indexOf(q) !== -1
+      );
+    });
+
+    renderFSELeaderboard(filtered);
+  }
+
+  /* MODAL DETAIL KINERJA FSE */
+  function openFSEPerformanceModal(userId) {
+    if (!cachedFSEReportingData) return;
+
+    var targetFSE = cachedFSEReportingData.find(function(item) {
+      return item.userId === userId;
+    });
+
+    if (!targetFSE) {
+      showToast('Error', 'Data FSE tidak ditemukan.', 'error');
+      return;
+    }
+
+    activeDrillDownFSE = targetFSE;
+
+    document.getElementById('modal-fse-perf-name').innerText = targetFSE.nama;
+    document.getElementById('modal-fse-perf-id').innerText = targetFSE.userId;
+    document.getElementById('modal-fse-perf-grade').innerText = targetFSE.grade || 'Grade A';
+    document.getElementById('modal-fse-perf-meta').innerText = 'Wilayah: ' + (targetFSE.wilayah || 'Jabodetabek') + ' • No. HP: ' + (targetFSE.noHp || '-') + ' • Kelolaan: ' + (targetFSE.jumlahMesin || 0) + ' Mesin';
+
+    document.getElementById('modal-perf-kpi-rate').innerText = targetFSE.completionRate;
+    document.getElementById('modal-perf-kpi-tickets').innerText = (targetFSE.totalSolving || 0) + ' / ' + (targetFSE.totalAssigned || 0) + ' Selesai';
+
+    var elFEKpi = document.getElementById('modal-perf-kpi-fe');
+    var elFEDetail = document.getElementById('modal-perf-kpi-fe-detail');
+    if (elFEKpi) elFEKpi.innerText = targetFSE.feComplianceRate;
+    if (elFEDetail) elFEDetail.innerText = (targetFSE.feOnTime || 0) + ' Tepat Waktu / ' + (targetFSE.feLate || 0) + ' Telat';
+
+    document.getElementById('modal-perf-kpi-mttr').innerText = targetFSE.avgResolutionTime;
+    document.getElementById('modal-perf-kpi-mesin').innerText = (targetFSE.jumlahMesin || 0) + ' Unit';
+
+    var tbody = document.getElementById('modal-fse-perf-table-tbody');
+    var counterEl = document.getElementById('modal-fse-perf-ticket-counter');
+    var tickets = targetFSE.tickets || [];
+
+    if (counterEl) counterEl.innerText = tickets.length + ' tiket penugasan';
+
+    if (tbody) {
+      if (tickets.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="11" class="text-center py-8 text-slate-400 font-mono text-xs">Belum ada riwayat tiket yang ditugaskan pada periode bulan ini.</td></tr>';
+      } else {
+        var html = '';
+        for (var i = 0; i < tickets.length; i++) {
+          var tk = tickets[i];
+          var stL = tk.statusTiket.toLowerCase();
+          var isDone = (stL === 'solving' || stL === 'solved' || stL === 'closed');
+
+          html += '<tr class="' + (isDone ? 'hover:bg-slate-50' : 'bg-amber-50/20 hover:bg-amber-50/50') + '">';
+          html += '<td class="p-2.5 font-bold text-slate-400">' + (i + 1) + '</td>';
+          html += '<td class="p-2.5 font-bold text-teal-800 whitespace-nowrap">' + escapeHtml(tk.idTiket) + '</td>';
+          html += '<td class="p-2.5 whitespace-nowrap font-medium text-slate-800">' + escapeHtml(tk.bank) + '</td>';
+          html += '<td class="p-2.5 whitespace-nowrap font-mono text-slate-700">' + escapeHtml(tk.serialNumber) + ' (' + escapeHtml(tk.idMesin) + ')</td>';
+          html += '<td class="p-2.5 truncate max-w-xs" title="' + escapeHtml(tk.problem) + '">' + escapeHtml(tk.problem) + '</td>';
+          html += '<td class="p-2.5 whitespace-nowrap text-[10px] text-slate-500">' + escapeHtml(tk.timeOpen) + '</td>';
+          html += '<td class="p-2.5 whitespace-nowrap text-[10px] text-slate-700">' + escapeHtml(tk.timeSolved) + '</td>';
+          html += '<td class="p-2.5 text-center font-bold text-slate-800 whitespace-nowrap">' + escapeHtml(tk.durasiDisplay) + '</td>';
+          html += '<td class="p-2.5 font-mono font-bold text-teal-700 whitespace-nowrap">' + escapeHtml(tk.noFeReport) + '</td>';
+          html += '<td class="p-2.5 text-center whitespace-nowrap"><span class="px-2 py-0.5 rounded text-[10px] font-bold ' + (isDone ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-900') + '">' + escapeHtml(tk.statusTiket) + '</span></td>';
+          html += '<td class="p-2.5 text-center whitespace-nowrap">' + (tk.feStatusBadge || '-') + '</td>';
+          html += '</tr>';
+        }
+        tbody.innerHTML = html;
+      }
+    }
+
+    var modal = document.getElementById('modal-fse-performance-detail');
+    if (modal) modal.classList.remove('hidden');
+  }
+
+  function closeFSEPerformanceModal() {
+    var modal = document.getElementById('modal-fse-performance-detail');
+    if (modal) modal.classList.add('hidden');
+    activeDrillDownFSE = null;
+  }
+
+  function exportFSEReportingCSV() {
+    if (!cachedFSEReportingData || cachedFSEReportingData.length === 0) {
+      showToast('Peringatan', 'Tidak ada data reporting untuk diekspor.', 'error');
+      return;
+    }
+
+    var monthVal = (document.getElementById('filter-reporting-month') ? document.getElementById('filter-reporting-month').value : 'Bulan_Aktif');
+    var filename = 'Reporting_Produktivitas_FSE_' + monthVal.replace(/[^a-zA-Z0-9_-]/g, '_') + '.csv';
+
+    var csvRows = [];
+    csvRows.push(['LAPORAN PRODUKTIVITAS & KINERJA FIELD SERVICE ENGINEER (FSE)']);
+    csvRows.push(['PERIODE EVALUASI', monthVal]);
+    csvRows.push(['TANGGAL EXPORT', UtilitiesDateString(new Date())]);
+    csvRows.push([]);
+    csvRows.push(['RANK', 'USER ID', 'NAMA FSE', 'NO HANDPHONE', 'WILAYAH TUGAS', 'KELOLAAN MESIN', 'TIKET DITUGASKAN', 'TIKET SELESAI', 'COMPLETION RATE (%)', 'KEPATUHAN FE REPORT (%)', 'FE TEPAT WAKTU (≤3H)', 'FE TELAT (>3H)', 'RATA-RATA RESOLUSI', 'GRADE KINERJA']);
+
+    for (var i = 0; i < cachedFSEReportingData.length; i++) {
+      var item = cachedFSEReportingData[i];
+      csvRows.push([
+        i + 1,
+        item.userId,
+        item.nama,
+        item.noHp,
+        item.wilayah,
+        item.jumlahMesin,
+        item.totalAssigned,
+        item.totalSolving,
+        item.completionRate,
+        item.feComplianceRate,
+        item.feOnTime || 0,
+        item.feLate || 0,
+        item.avgResolutionTime,
+        item.grade
+      ]);
+    }
+
+    downloadCSVContent(csvRows, filename);
+  }
+
+  function exportFSEIndividualCSV() {
+    if (!activeDrillDownFSE) return;
+
+    var fse = activeDrillDownFSE;
+    var monthVal = (document.getElementById('filter-reporting-month') ? document.getElementById('filter-reporting-month').value : 'Bulan_Aktif');
+    var filename = 'Audit_Kinerja_' + fse.nama.replace(/[^a-zA-Z0-9_-]/g, '_') + '_' + monthVal.replace(/[^a-zA-Z0-9_-]/g, '_') + '.csv';
+
+    var csvRows = [];
+    csvRows.push(['AUDIT RINCIAN TIKET & KINERJA INDIVIDUAL FSE']);
+    csvRows.push(['NAMA FSE', fse.nama]);
+    csvRows.push(['USER ID', fse.userId]);
+    csvRows.push(['WILAYAH', fse.wilayah]);
+    csvRows.push(['PERIODE', monthVal]);
+    csvRows.push(['COMPLETION RATE', fse.completionRate + ' (' + fse.totalSolving + ' Selesai / ' + fse.totalAssigned + ' Ditugaskan)']);
+    csvRows.push(['KEPATUHAN FE REPORT', fse.feComplianceRate + ' (' + (fse.feOnTime || 0) + ' Tepat Waktu / ' + (fse.feLate || 0) + ' Telat)']);
+    csvRows.push(['RATA-RATA RESOLUSI', fse.avgResolutionTime]);
+    csvRows.push([]);
+    csvRows.push(['NO', 'ID TIKET', 'BANK', 'SERIAL NUMBER', 'ID MESIN', 'PROBLEM', 'WAKTU OPEN', 'WAKTU SOLVING', 'DURASI RESOLUSI', 'NO FE REPORT', 'STATUS TIKET', 'STATUS PENGIRIMAN FE REPORT', 'STATUS SLA CM']);
+
+    var tickets = fse.tickets || [];
+    for (var k = 0; k < tickets.length; k++) {
+      var t = tickets[k];
+      csvRows.push([
+        k + 1,
+        t.idTiket,
+        t.bank,
+        t.serialNumber,
+        t.idMesin,
+        t.problem,
+        t.timeOpen,
+        t.timeSolved,
+        t.durasiDisplay,
+        t.noFeReport,
+        t.statusTiket,
+        t.feSubmissionStatus || '-',
+        t.statusSlaCm
+      ]);
+    }
+
+    downloadCSVContent(csvRows, filename);
+  }
+
+  function downloadCSVContent(csvRows, filename) {
+    var csvContent = '\uFEFF';
+    for (var r = 0; r < csvRows.length; r++) {
+      var row = csvRows[r];
+      var escapedRow = [];
+      for (var c = 0; c < row.length; c++) {
+        var val = String(row[c] === undefined || row[c] === null ? '' : row[c]);
+        if (val.search(/("|,|\n)/g) >= 0) {
+          val = '"' + val.replace(/"/g, '""') + '"';
+        }
+        escapedRow.push(val);
+      }
+      csvContent += escapedRow.join(',') + '\r\n';
+    }
+
+    var blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    var link = document.createElement('a');
+    var url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', filename);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+
+    showToast('Download Berhasil', 'Berkas ' + filename + ' berhasil diunduh.', 'success');
   }
 
   function renderKPIScorecards() {
@@ -631,7 +1461,7 @@
     if (targetType === 'Machines') {
       titleEl.innerText = 'Import Database Mesin ATM';
       subtitleEl.innerText = 'Unggah berkas CSV daftar aset mesin ATM';
-      guideEl.innerText = 'ID_Mesin, Serial_Number, Nama_Bank, Lokasi_ATM, Tipe_Mesin, Status_Mesin, FSE_Pengelola';
+      guideEl.innerText = 'ID_Mesin, Serial_Number, Nama_Bank, Lokasi_ATM, Tipe_Mesin, Status_Mesin, FSE_Pengelola, Zona_SLA (Zona 1/2/3)';
       if (antiDupeNote) antiDupeNote.classList.remove('hidden');
     } else if (targetType === 'FSE') {
       titleEl.innerText = 'Import Data Teknisi FSE';
@@ -692,7 +1522,7 @@
             if (res && res.status === 'success') {
               showToast('Impor Berhasil', res.message, 'success');
               if (targetType === 'Machines') loadSectionAuxiliaryData('DatabaseMesin');
-              else if (targetType === 'FSE') loadSectionAuxiliaryData('FSE');
+              else if (targetType === 'FSE') { loadSectionAuxiliaryData('FSE'); loadUsersData(); }
               else if (targetType === 'Customers') loadSectionAuxiliaryData('DatabaseCustomer');
             } else {
               showToast('Gagal Impor', res ? res.message : 'Error backend', 'error');
@@ -721,5 +1551,681 @@
       result.push(cols);
     }
     return result;
+  }
+
+  function loadSLAAchievementData() {
+    var monthEl = document.getElementById('filter-sla-month');
+    var bankEl = document.getElementById('filter-sla-bank');
+
+    if (monthEl && !monthEl.value) {
+      var now = new Date();
+      var yr = now.getFullYear();
+      var mo = ('0' + (now.getMonth() + 1)).slice(-2);
+      monthEl.value = yr + '-' + mo;
+    }
+
+    var selectedMonth = monthEl ? monthEl.value : '';
+    var selectedBank = bankEl ? bankEl.value : 'ALL';
+
+    var chronicTbody = document.getElementById('chronic-machines-table-body');
+    var auditTbody = document.getElementById('sla-audit-table-body');
+
+    if (chronicTbody) {
+      chronicTbody.innerHTML = '<tr><td colspan="8" class="text-center py-6 text-slate-400 font-mono text-xs"><i class="fa-solid fa-spinner fa-spin text-amber-600 mr-2 text-base"></i>Menganalisis frekuensi unit repeat problem...</td></tr>';
+    }
+    if (auditTbody) {
+      auditTbody.innerHTML = '<tr><td colspan="12" class="text-center py-8 text-slate-400 font-mono text-xs"><i class="fa-solid fa-spinner fa-spin text-teal-600 mr-2 text-base"></i>Mengkalkulasi Alokasi 3 Pihak, Vendor OLA Capping (120m), dan Target Zona Geografis...</td></tr>';
+    }
+
+    if (typeof google !== 'undefined' && google.script && google.script.run) {
+      google.script.run
+        .withSuccessHandler(function(res) {
+          if (res && res.status === 'success') {
+            cachedSLAResultData = res;
+            renderSLAMetrics(res.summary);
+            renderChronicMachinesTable(res.chronicMachines || []);
+            renderSLAAuditTable(res.auditTickets || []);
+          } else {
+            showToast('Gagal Memuat SLA', res ? res.message : 'Error server', 'error');
+            if (chronicTbody) chronicTbody.innerHTML = '<tr><td colspan="8" class="text-center py-4 text-rose-500 text-xs">Gagal: ' + (res ? res.message : 'Error') + '</td></tr>';
+            if (auditTbody) auditTbody.innerHTML = '<tr><td colspan="12" class="text-center py-4 text-rose-500 text-xs">Gagal: ' + (res ? res.message : 'Error') + '</td></tr>';
+          }
+        })
+        .withFailureHandler(function(err) {
+          showToast('Error Server', 'Kendala server: ' + err, 'error');
+          if (chronicTbody) chronicTbody.innerHTML = '<tr><td colspan="8" class="text-center py-4 text-rose-500 text-xs">Error backend: ' + err + '</td></tr>';
+          if (auditTbody) auditTbody.innerHTML = '<tr><td colspan="12" class="text-center py-4 text-rose-500 text-xs">Error backend: ' + err + '</td></tr>';
+        })
+        .getSLAAchievementData(selectedMonth, selectedBank);
+    }
+  }
+
+  function renderSLAMetrics(summary) {
+    if (!summary) return;
+
+    var rateEl = document.getElementById('sla-kpi-rate');
+    var rateBar = document.getElementById('sla-kpi-rate-bar');
+    var countEl = document.getElementById('sla-kpi-achieved-count');
+    var mttrEl = document.getElementById('sla-kpi-avg-mttr');
+    var fleetRateEl = document.getElementById('sla-kpi-fleet-rate');
+    var fleetDetailEl = document.getElementById('sla-kpi-fleet-detail');
+    var availBadge = document.getElementById('sla-kpi-availability-badge');
+    var savedHoursEl = document.getElementById('sla-kpi-saved-hours');
+
+    var rate = summary.slaAchievementRate || 100;
+    if (rateEl) rateEl.innerText = rate + '%';
+    if (rateBar) {
+      rateBar.style.width = Math.min(100, Math.max(0, rate)) + '%';
+      if (rate >= 95) {
+        rateBar.className = 'h-full bg-gradient-to-r from-teal-500 to-emerald-500 rounded-full transition-all duration-500';
+      } else {
+        rateBar.className = 'h-full bg-gradient-to-r from-rose-500 to-amber-500 rounded-full transition-all duration-500';
+      }
+    }
+
+    if (countEl) {
+      countEl.innerText = (summary.achievedCount || 0) + ' dari ' + (summary.totalCMTickets || 0) + ' Tiket CM Achieved';
+    }
+
+    if (mttrEl) mttrEl.innerText = summary.avgNetMTTRDisplay || '0 Menit';
+    if (fleetRateEl) fleetRateEl.innerText = (summary.fleetIncidentRate || 0) + '%';
+    
+    if (fleetDetailEl) {
+      fleetDetailEl.innerText = (summary.problemMachineCount || 0) + ' Mesin Problem dari ' + (summary.totalManagedMachines || 0) + ' Unit';
+    }
+
+    if (availBadge) {
+      availBadge.innerHTML = '<i class="fa-solid fa-circle-check"></i> ' + (summary.fleetAvailabilityRate || 100) + '% Fleet Availability';
+    }
+
+    if (savedHoursEl) savedHoursEl.innerText = (summary.totalSavedHours || 0) + ' Jam';
+
+    var grossBadge = document.getElementById('triparty-gross-badge');
+    if (grossBadge) grossBadge.innerText = 'Total Gross: ' + (summary.totalGrossDowntimeHours || 0) + ' Jam';
+
+    var breachBadge = document.getElementById('triparty-vendor-breach-badge');
+    if (breachBadge) {
+      if (summary.totalVendorBreachMinutes && summary.totalVendorBreachMinutes > 0) {
+        breachBadge.innerText = '⚠️ Vendor Overdue: ' + summary.totalVendorBreachHours + ' Jam';
+        breachBadge.classList.remove('hidden');
+      } else {
+        breachBadge.classList.add('hidden');
+      }
+    }
+
+    var barComp = document.getElementById('triparty-company-bar');
+    var barBank = document.getElementById('triparty-bank-bar');
+    var barVend = document.getElementById('triparty-vendor-bar');
+
+    var pComp = summary.companyTimePercent || 0;
+    var pBank = summary.bankTimePercent || 0;
+    var pVend = summary.vendorTimePercent || 0;
+
+    if (barComp) barComp.style.width = Math.max(5, pComp) + '%';
+    if (barBank) barBank.style.width = Math.max(5, pBank) + '%';
+    if (barVend) barVend.style.width = Math.max(5, pVend) + '%';
+
+    var lblComp = document.getElementById('triparty-company-label');
+    var lblBank = document.getElementById('triparty-bank-label');
+    var lblVend = document.getElementById('triparty-vendor-label');
+
+    if (lblComp) lblComp.innerText = pComp + '% (' + (summary.totalCompanyHours || 0) + 'j)';
+    if (lblBank) lblBank.innerText = pBank + '% (' + (summary.totalBankHours || 0) + 'j)';
+    if (lblVend) lblVend.innerText = pVend + '% (' + (summary.totalVendorHours || 0) + 'j)';
+
+    var zStats = summary.zoneStats || {};
+    var z1 = zStats['Zona 1'] || { rate: 100, total: 0 };
+    var z2 = zStats['Zona 2'] || { rate: 100, total: 0 };
+    var z3 = zStats['Zona 3'] || { rate: 100, total: 0 };
+
+    var pill1 = document.getElementById('sla-zone1-pill');
+    var pill2 = document.getElementById('sla-zone2-pill');
+    var pill3 = document.getElementById('sla-zone3-pill');
+
+    if (pill1) pill1.innerText = 'Zona 1 (3J): ' + z1.rate + '% (' + z1.total + ' Tiket)';
+    if (pill2) pill2.innerText = 'Zona 2 (4J): ' + z2.rate + '% (' + z2.total + ' Tiket)';
+    if (pill3) pill3.innerText = 'Zona 3 (6J): ' + z3.rate + '% (' + z3.total + ' Tiket)';
+  }
+
+  function renderChronicMachinesTable(chronicList) {
+    var tbody = document.getElementById('chronic-machines-table-body');
+    var badgeCount = document.getElementById('chronic-count-badge');
+    if (!tbody) return;
+
+    var criticalOrWarningCount = 0;
+    for (var c = 0; c < (chronicList || []).length; c++) {
+      if (chronicList[c].totalIncidents >= 2) criticalOrWarningCount++;
+    }
+
+    if (badgeCount) {
+      badgeCount.innerText = criticalOrWarningCount + ' Unit Repeat Problem Terdeteksi';
+      if (criticalOrWarningCount > 0) {
+        badgeCount.className = 'px-2.5 py-1 rounded-xl bg-rose-100 text-rose-800 border border-rose-300 text-xs font-bold font-mono animate-pulse';
+      } else {
+        badgeCount.className = 'px-2.5 py-1 rounded-xl bg-emerald-100 text-emerald-800 border border-emerald-200 text-xs font-bold font-mono';
+      }
+    }
+
+    if (!chronicList || chronicList.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="8" class="text-center py-6 text-slate-400 font-mono text-xs"><i class="fa-solid fa-shield-halved text-emerald-500 text-2xl mb-1 block"></i>Semua mesin beroperasi prima tanpa repeat problem pada periode ini.</td></tr>';
+      return;
+    }
+
+    var html = '';
+    for (var i = 0; i < chronicList.length; i++) {
+      var ch = chronicList[i];
+      var isKritis = (ch.totalIncidents >= 3);
+      var isWarning = (ch.totalIncidents === 2);
+
+      var statusBadge = '<span class="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">Normal (1x Insiden)</span>';
+      var rowClass = 'hover:bg-slate-50 transition';
+
+      if (isKritis) {
+        statusBadge = '<span class="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-rose-600 text-white animate-pulse"><i class="fa-solid fa-triangle-exclamation mr-1"></i>KRITIS (&ge;3x) - Repeat Problem &amp; Overhaul Part</span>';
+        rowClass = 'bg-rose-50/50 hover:bg-rose-50/80 font-medium transition';
+      } else if (isWarning) {
+        statusBadge = '<span class="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-300"><i class="fa-solid fa-circle-exclamation mr-1 text-amber-600"></i>Warning (2x) - Repeat Problem</span>';
+        rowClass = 'bg-amber-50/30 hover:bg-amber-50/60 transition';
+      }
+
+      html += '<tr class="' + rowClass + '">';
+      html += '<td class="p-3 font-mono text-slate-400">' + (i + 1) + '</td>';
+      html += '<td class="p-3 font-mono font-bold text-slate-800 whitespace-nowrap">' + escapeHtml(ch.serialNumber) + '</td>';
+      html += '<td class="p-3 font-mono font-bold text-teal-800 whitespace-nowrap">' + escapeHtml(ch.idMesin) + '</td>';
+      html += '<td class="p-3 font-semibold text-slate-800 whitespace-nowrap">' + escapeHtml(ch.bank) + '</td>';
+      html += '<td class="p-3 text-slate-600 max-w-xs truncate" title="' + escapeHtml(ch.lokasi) + '">' + escapeHtml(ch.lokasi) + '</td>';
+      html += '<td class="p-3 text-center font-mono font-extrabold ' + (isKritis ? 'text-rose-700 text-sm' : (isWarning ? 'text-amber-700' : 'text-slate-700')) + ' whitespace-nowrap">' + ch.totalIncidents + 'x Repeat</td>';
+      html += '<td class="p-3 text-slate-700 max-w-xs truncate" title="' + escapeHtml(ch.dominantProblem) + '">' + escapeHtml(ch.dominantProblem) + '</td>';
+      html += '<td class="p-3 text-center whitespace-nowrap">' + statusBadge + '</td>';
+      html += '</tr>';
+    }
+
+    tbody.innerHTML = html;
+  }
+
+  function renderSLAAuditTable(auditList) {
+    var tbody = document.getElementById('sla-audit-table-body');
+    if (!tbody) return;
+
+    if (!auditList || auditList.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="12" class="text-center py-8 text-slate-400 font-mono text-xs"><i class="fa-solid fa-inbox text-2xl mb-1.5 block text-slate-300"></i>Tidak ada tiket CM yang cocok dengan filter.</td></tr>';
+      return;
+    }
+
+    var html = '';
+    for (var i = 0; i < auditList.length; i++) {
+      var t = auditList[i];
+      var isAchieved = (t.slaStatus === 'Achieved');
+
+      var slaBadge = isAchieved
+        ? '<span class="px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 whitespace-nowrap"><i class="fa-solid fa-circle-check mr-1"></i>Achieved</span>'
+        : '<span class="px-2.5 py-1 rounded-full text-[10px] font-bold bg-rose-100 text-rose-800 border border-rose-300 animate-pulse whitespace-nowrap"><i class="fa-solid fa-triangle-exclamation mr-1 text-rose-600"></i>Breached</span>';
+
+      var zoneBadgeClass = 'bg-amber-50 text-amber-800 border-amber-200';
+      if (t.zonaSla === 'Zona 1') zoneBadgeClass = 'bg-sky-50 text-sky-800 border-sky-200 font-bold';
+      else if (t.zonaSla === 'Zona 3') zoneBadgeClass = 'bg-slate-100 text-slate-700 border-slate-300';
+      var zoneBadge = '<span class="px-2 py-0.5 rounded-md text-[10px] border font-mono font-semibold ' + zoneBadgeClass + '">' + escapeHtml(t.zonaSla) + '</span>';
+
+      var allocDisplay = '<span class="font-mono text-[11px] text-slate-700 font-semibold">' + escapeHtml(t.triPartyAllocationSummary) + '</span>';
+      if (t.isVendorBreach) {
+        allocDisplay += '<div class="text-[9px] text-rose-600 font-bold"><i class="fa-solid fa-triangle-exclamation mr-0.5"></i>Vendor +' + t.vendorBreachMins + 'm Chargeback</div>';
+      }
+
+      html += '<tr class="' + (!isAchieved ? 'bg-rose-50/25 hover:bg-rose-50/50' : 'hover:bg-white/80') + ' transition">';
+      html += '<td class="p-3 font-mono font-bold text-teal-700 whitespace-nowrap">' + escapeHtml(t.idTiket) + '</td>';
+      html += '<td class="p-3 whitespace-nowrap"><div class="font-semibold text-slate-800">' + escapeHtml(t.bank) + '</div><div class="font-mono text-[10px] text-slate-500">' + escapeHtml(t.serialNumber) + ' (' + escapeHtml(t.idMesin) + ')</div></td>';
+      html += '<td class="p-3 text-center whitespace-nowrap">' + zoneBadge + '</td>';
+      html += '<td class="p-3 font-medium text-slate-700 whitespace-nowrap">' + escapeHtml(t.namaEngineer) + '</td>';
+      html += '<td class="p-3 text-slate-600 max-w-xs truncate" title="' + escapeHtml(t.problem) + '">' + escapeHtml(t.problem) + '</td>';
+      html += '<td class="p-3 font-mono text-slate-600 whitespace-nowrap text-[11px]">' + escapeHtml(t.timeOpen) + '</td>';
+      html += '<td class="p-3 font-mono ' + (t.isSolved ? 'text-slate-800' : 'text-amber-700 font-semibold') + ' whitespace-nowrap text-[11px]">' + escapeHtml(t.timeSolved) + '</td>';
+      html += '<td class="p-3 text-center font-mono text-slate-700 whitespace-nowrap">' + escapeHtml(t.grossDisplay) + '</td>';
+      html += '<td class="p-3 text-center whitespace-nowrap" title="' + escapeHtml(t.pausedBreakdown) + '">' + allocDisplay + '</td>';
+      html += '<td class="p-3 text-center font-mono font-extrabold ' + (isAchieved ? 'text-emerald-700' : 'text-rose-700') + ' whitespace-nowrap">' + escapeHtml(t.netDisplay) + '</td>';
+      html += '<td class="p-3 text-center font-mono text-slate-600 font-semibold whitespace-nowrap">' + escapeHtml(t.targetSlaDisplay) + '</td>';
+      html += '<td class="p-3 text-center whitespace-nowrap">' + slaBadge + '</td>';
+      html += '</tr>';
+    }
+
+    tbody.innerHTML = html;
+  }
+
+  function handleSLAAuditSearchInput() {
+    var searchEl = document.getElementById('filter-sla-audit-search');
+    var clearBtn = document.getElementById('btn-clear-sla-audit-search');
+    var q = searchEl ? searchEl.value.trim() : '';
+
+    if (clearBtn) {
+      if (q !== '') clearBtn.classList.remove('hidden');
+      else clearBtn.classList.add('hidden');
+    }
+
+    clearTimeout(searchSLAAuditDebounceTimer);
+    searchSLAAuditDebounceTimer = setTimeout(function() {
+      filterSLAAuditTickets();
+    }, 300);
+  }
+
+  function clearSLAAuditSearch() {
+    var searchEl = document.getElementById('filter-sla-audit-search');
+    var clearBtn = document.getElementById('btn-clear-sla-audit-search');
+    if (searchEl) searchEl.value = '';
+    if (clearBtn) clearBtn.classList.add('hidden');
+    filterSLAAuditTickets();
+  }
+
+  function filterSLAAuditTickets() {
+    if (!cachedSLAResultData || !cachedSLAResultData.auditTickets) return;
+
+    var searchEl = document.getElementById('filter-sla-audit-search');
+    var statusEl = document.getElementById('filter-sla-audit-status');
+
+    var q = searchEl ? searchEl.value.toLowerCase().trim() : '';
+    var st = statusEl ? statusEl.value : 'ALL';
+
+    var filtered = cachedSLAResultData.auditTickets.filter(function(item) {
+      if (st === 'VENDOR_BREACH') {
+        if (!item.isVendorBreach) return false;
+      } else if (st !== 'ALL' && item.slaStatus !== st) {
+        return false;
+      }
+
+      if (q) {
+        var match = (
+          item.idTiket.toLowerCase().indexOf(q) !== -1 ||
+          item.serialNumber.toLowerCase().indexOf(q) !== -1 ||
+          item.idMesin.toLowerCase().indexOf(q) !== -1 ||
+          item.namaEngineer.toLowerCase().indexOf(q) !== -1 ||
+          item.bank.toLowerCase().indexOf(q) !== -1 ||
+          item.problem.toLowerCase().indexOf(q) !== -1 ||
+          item.zonaSla.toLowerCase().indexOf(q) !== -1
+        );
+        if (!match) return false;
+      }
+      return true;
+    });
+
+    renderSLAAuditTable(filtered);
+  }
+
+  /* MODAL POPUP: DETAIL AUDIT SPREADSHEET SLA */
+  function openSLAMetricDetailModal(metricType) {
+    if (!cachedSLAResultData) {
+      showToast('Memuat Data', 'Mengambil data SLA terlebih dahulu...', 'info');
+      loadSLAAchievementData();
+      return;
+    }
+
+    activeSLAMetricType = metricType;
+    var modal = document.getElementById('modal-sla-metric-detail');
+    var iconEl = document.getElementById('modal-sla-metric-icon');
+    var titleEl = document.getElementById('modal-sla-metric-title');
+    var subEl = document.getElementById('modal-sla-metric-sub');
+    var periodBadge = document.getElementById('modal-sla-metric-period-badge');
+
+    var sheetNameEl = document.getElementById('provenance-sheet-name');
+    var columnsListEl = document.getElementById('provenance-columns-list');
+    var formulaTextEl = document.getElementById('provenance-formula-text');
+    var summaryResultEl = document.getElementById('provenance-summary-result');
+
+    var thead = document.getElementById('modal-sla-table-thead');
+    var tbody = document.getElementById('modal-sla-table-tbody');
+    var counterEl = document.getElementById('modal-sla-table-counter');
+
+    var s = cachedSLAResultData.summary || {};
+    var meta = cachedSLAResultData.meta || {};
+    var tickets = cachedSLAResultData.auditTickets || [];
+    var fleet = cachedSLAResultData.fleetAudit || [];
+    var pauses = cachedSLAResultData.pauseAudit || [];
+
+    if (periodBadge) {
+      periodBadge.innerText = (meta.filterMonth || 'Bulan Berjalan') + ' (' + (meta.filterBank === 'ALL' ? 'Semua Bank' : meta.filterBank) + ')';
+    }
+
+    var theadHtml = '';
+    var tbodyHtml = '';
+    var rowCount = 0;
+
+    if (metricType === 'overall') {
+      iconEl.className = 'w-10 h-10 rounded-xl bg-teal-50 text-teal-700 border border-teal-200 flex items-center justify-center text-base shrink-0';
+      iconEl.innerHTML = '<i class="fa-solid fa-stopwatch-20"></i>';
+      titleEl.innerText = 'Audit Kepatuhan: Overall SLA Achievement (Zonasi & Multi-Party)';
+      subEl.innerText = 'Rincian kepatuhan tiket CM terhadap target Net MTTR adaptif per zona wilayah (Zona 1 = 3J, Zona 2 = 4J, Zona 3 = 6J)';
+
+      sheetNameEl.innerText = 'Tickets & Machines (Master Tiket & Master Inventaris Mesin)';
+      columnsListEl.innerText = 'Tickets: (ID_Tiket, Tanggal_Tiket, Jam_Tiket, Waktu_Solving, Timeline_History) | Machines: (Zona_SLA)';
+      formulaTextEl.innerText = 'Net MTTR = Gross - (Bank Time + min(Vendor Time, 120m)) | Status = (Net MTTR <= Target Zona Mesin) * 100%';
+      summaryResultEl.innerHTML = '<span class="text-teal-700 font-extrabold text-sm">' + (s.slaAchievementRate || 100) + '%</span> (' + (s.achievedCount || 0) + ' Achieved dari ' + (s.totalCMTickets || 0) + ' Tiket CM)';
+
+      theadHtml = '<tr>' +
+        '<th class="p-2.5 font-bold whitespace-nowrap">NO</th>' +
+        '<th class="p-2.5 font-bold whitespace-nowrap">ID TIKET</th>' +
+        '<th class="p-2.5 font-bold whitespace-nowrap">BANK</th>' +
+        '<th class="p-2.5 font-bold whitespace-nowrap">SERIAL NUMBER</th>' +
+        '<th class="p-2.5 font-bold text-center whitespace-nowrap">ZONA</th>' +
+        '<th class="p-2.5 font-bold whitespace-nowrap">ENGINEER (FSE)</th>' +
+        '<th class="p-2.5 font-bold text-center whitespace-nowrap">GROSS TIME</th>' +
+        '<th class="p-2.5 font-bold text-center whitespace-nowrap">COMPANY TIME</th>' +
+        '<th class="p-2.5 font-bold text-center whitespace-nowrap">BANK TIME</th>' +
+        '<th class="p-2.5 font-bold text-center whitespace-nowrap">VENDOR TIME</th>' +
+        '<th class="p-2.5 font-bold text-center whitespace-nowrap">VENDOR CHARGEBACK</th>' +
+        '<th class="p-2.5 font-bold text-center whitespace-nowrap">NET MTTR</th>' +
+        '<th class="p-2.5 font-bold text-center whitespace-nowrap">TARGET ZONA</th>' +
+        '<th class="p-2.5 font-bold text-center whitespace-nowrap">STATUS KEPATUHAN</th>' +
+      '</tr>';
+
+      for (var i = 0; i < tickets.length; i++) {
+        var t = tickets[i];
+        var isAch = (t.slaStatus === 'Achieved');
+        tbodyHtml += '<tr class="' + (isAch ? 'hover:bg-slate-50' : 'bg-rose-50/30 hover:bg-rose-50/60') + '">' +
+          '<td class="p-2.5 font-bold text-slate-400">' + (i + 1) + '</td>' +
+          '<td class="p-2.5 font-bold text-teal-800 whitespace-nowrap">' + escapeHtml(t.idTiket) + '</td>' +
+          '<td class="p-2.5 font-semibold text-slate-800 whitespace-nowrap">' + escapeHtml(t.bank) + '</td>' +
+          '<td class="p-2.5 font-semibold text-slate-700 whitespace-nowrap">' + escapeHtml(t.serialNumber) + '</td>' +
+          '<td class="p-2.5 text-center font-bold font-mono text-slate-700 whitespace-nowrap">' + escapeHtml(t.zonaSla) + '</td>' +
+          '<td class="p-2.5 whitespace-nowrap">' + escapeHtml(t.namaEngineer) + '</td>' +
+          '<td class="p-2.5 text-center whitespace-nowrap">' + escapeHtml(t.grossDisplay) + '</td>' +
+          '<td class="p-2.5 text-center text-emerald-700 font-bold whitespace-nowrap">' + escapeHtml(t.companyDisplay) + '</td>' +
+          '<td class="p-2.5 text-center text-sky-700 font-bold whitespace-nowrap">' + escapeHtml(t.bankDisplay) + '</td>' +
+          '<td class="p-2.5 text-center text-amber-700 font-bold whitespace-nowrap">' + escapeHtml(t.vendorDisplay) + '</td>' +
+          '<td class="p-2.5 text-center font-mono font-bold ' + (t.isVendorBreach ? 'text-rose-700 bg-rose-50' : 'text-slate-400') + ' whitespace-nowrap">' + 
+            (t.isVendorBreach ? ('+' + t.vendorBreachMins + 'm') : '0m') + 
+          '</td>' +
+          '<td class="p-2.5 text-center font-extrabold ' + (isAch ? 'text-emerald-700' : 'text-rose-700') + ' whitespace-nowrap">' + escapeHtml(t.netDisplay) + '</td>' +
+          '<td class="p-2.5 text-center text-slate-500 font-mono whitespace-nowrap">' + escapeHtml(t.targetSlaDisplay) + '</td>' +
+          '<td class="p-2.5 text-center whitespace-nowrap">' + 
+            (isAch ? '<span class="px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 font-bold text-[10px]">&check; Achieved</span>' : '<span class="px-2 py-0.5 rounded bg-rose-100 text-rose-800 font-bold text-[10px]">&times; Breached</span>') + 
+          '</td>' +
+        '</tr>';
+      }
+      rowCount = tickets.length;
+
+    } else if (metricType === 'mttr') {
+      iconEl.className = 'w-10 h-10 rounded-xl bg-amber-50 text-amber-700 border border-amber-200 flex items-center justify-center text-base shrink-0';
+      iconEl.innerHTML = '<i class="fa-solid fa-bolt"></i>';
+      titleEl.innerText = 'Audit Durasi Jam: Multi-Party Stopwatch & Average Net MTTR';
+      subEl.innerText = 'Bedah komparasi Gross Time, Company Wrench Time, Bank Custody Time, dan Vendor Escrow Time (Capped 120m)';
+
+      sheetNameEl.innerText = 'Tickets & Machines';
+      columnsListEl.innerText = 'Timeline_History (Waiting Vendor & Pending Lokasi Tutup), Tanggal_Tiket, Jam_Tiket, Waktu_Solving';
+      formulaTextEl.innerText = 'Saved Time = Bank Time + min(Vendor Time, 120m) | Net MTTR = Gross - Saved Time';
+      summaryResultEl.innerHTML = '<span class="text-amber-700 font-extrabold text-sm">' + (s.avgNetMTTRDisplay || '0 Menit') + '</span> (Kotor: ' + (s.avgGrossMTTRDisplay || '0') + ' | Jeda Sah: ' + (s.totalSavedHours || 0) + ' Jam)';
+
+      theadHtml = '<tr>' +
+        '<th class="p-2.5 font-bold whitespace-nowrap">NO</th>' +
+        '<th class="p-2.5 font-bold whitespace-nowrap">ID TIKET</th>' +
+        '<th class="p-2.5 font-bold whitespace-nowrap">SERIAL NUMBER</th>' +
+        '<th class="p-2.5 font-bold text-center whitespace-nowrap">ZONA</th>' +
+        '<th class="p-2.5 font-bold text-center whitespace-nowrap">GROSS (MENIT)</th>' +
+        '<th class="p-2.5 font-bold text-center whitespace-nowrap">COMPANY (MENIT)</th>' +
+        '<th class="p-2.5 font-bold text-center whitespace-nowrap">BANK (MENIT)</th>' +
+        '<th class="p-2.5 font-bold text-center whitespace-nowrap">VENDOR (MENIT)</th>' +
+        '<th class="p-2.5 font-bold text-center whitespace-nowrap">VENDOR CAP (120M)</th>' +
+        '<th class="p-2.5 font-bold text-center whitespace-nowrap">NET MTTR (MENIT)</th>' +
+        '<th class="p-2.5 font-bold text-center whitespace-nowrap">NET MTTR DISPLAY</th>' +
+        '<th class="p-2.5 font-bold text-center whitespace-nowrap">TARGET ZONA</th>' +
+        '<th class="p-2.5 font-bold text-center whitespace-nowrap">DEVIASI</th>' +
+      '</tr>';
+
+      for (var j = 0; j < tickets.length; j++) {
+        var tk = tickets[j];
+        var isOk = (tk.slaStatus === 'Achieved');
+        tbodyHtml += '<tr class="' + (isOk ? 'hover:bg-slate-50' : 'bg-rose-50/30 hover:bg-rose-50/60') + '">' +
+          '<td class="p-2.5 font-bold text-slate-400">' + (j + 1) + '</td>' +
+          '<td class="p-2.5 font-bold text-teal-800 whitespace-nowrap">' + escapeHtml(tk.idTiket) + '</td>' +
+          '<td class="p-2.5 font-semibold text-slate-800 whitespace-nowrap">' + escapeHtml(tk.serialNumber) + '</td>' +
+          '<td class="p-2.5 text-center font-bold font-mono text-slate-700 whitespace-nowrap">' + escapeHtml(tk.zonaSla) + '</td>' +
+          '<td class="p-2.5 text-center whitespace-nowrap">' + tk.grossMins + ' m</td>' +
+          '<td class="p-2.5 text-center text-emerald-700 font-bold whitespace-nowrap">' + tk.companyMins + ' m</td>' +
+          '<td class="p-2.5 text-center text-sky-700 font-bold whitespace-nowrap">' + tk.bankMins + ' m</td>' +
+          '<td class="p-2.5 text-center text-amber-700 font-bold whitespace-nowrap">' + tk.vendorMins + ' m</td>' +
+          '<td class="p-2.5 text-center font-mono font-bold whitespace-nowrap">' + tk.vendorExcusedMins + ' m</td>' +
+          '<td class="p-2.5 text-center font-bold whitespace-nowrap">' + tk.netMins + ' m</td>' +
+          '<td class="p-2.5 text-center font-extrabold ' + (isOk ? 'text-emerald-700' : 'text-rose-700') + ' whitespace-nowrap">' + escapeHtml(tk.netDisplay) + '</td>' +
+          '<td class="p-2.5 text-center font-mono text-slate-500 whitespace-nowrap">' + escapeHtml(tk.targetSlaDisplay) + '</td>' +
+          '<td class="p-2.5 text-center font-bold ' + (isOk ? 'text-emerald-700' : 'text-rose-700') + ' whitespace-nowrap">' + escapeHtml(tk.deviationDisplay) + '</td>' +
+        '</tr>';
+      }
+      rowCount = tickets.length;
+
+    } else if (metricType === 'fleet') {
+      iconEl.className = 'w-10 h-10 rounded-xl bg-indigo-50 text-indigo-700 border border-indigo-200 flex items-center justify-center text-base shrink-0';
+      iconEl.innerHTML = '<i class="fa-solid fa-server"></i>';
+      titleEl.innerText = 'Audit Populasi Mesin: Fleet Incident & Availability Rate';
+      subEl.innerText = 'Daftar seluruh inventaris mesin kelolaan, zona SLA, dan status keterpaparan insiden tiket CM bulan terpilih';
+
+      sheetNameEl.innerText = 'Machines & Tickets (Master Inventaris & Insiden Tiket)';
+      columnsListEl.innerText = 'Machines: (ID_Mesin, Serial_Number, Nama_Bank, Lokasi_ATM, Zona_SLA, Status_Mesin, FSE_Pengelola)';
+      formulaTextEl.innerText = 'Incident Rate = (Jumlah Mesin Problem CM / Total Mesin Aktif) * 100% | Availability = 100% - Incident Rate';
+      summaryResultEl.innerHTML = '<span class="text-indigo-700 font-extrabold text-sm">' + (s.fleetIncidentRate || 0) + '% Incident</span> (' + (s.problemMachineCount || 0) + ' Mesin Problem dari ' + (s.totalManagedMachines || 0) + ' Unit | Availability: ' + (s.fleetAvailabilityRate || 100) + '%)';
+
+      theadHtml = '<tr>' +
+        '<th class="p-2.5 font-bold whitespace-nowrap">NO</th>' +
+        '<th class="p-2.5 font-bold whitespace-nowrap">ID MESIN</th>' +
+        '<th class="p-2.5 font-bold whitespace-nowrap">SERIAL NUMBER</th>' +
+        '<th class="p-2.5 font-bold whitespace-nowrap">BANK</th>' +
+        '<th class="p-2.5 font-bold text-center whitespace-nowrap">ZONA SLA</th>' +
+        '<th class="p-2.5 font-bold whitespace-nowrap">LOKASI ATM</th>' +
+        '<th class="p-2.5 font-bold whitespace-nowrap">TIPE / MERK</th>' +
+        '<th class="p-2.5 font-bold whitespace-nowrap">FSE PENGELOLA</th>' +
+        '<th class="p-2.5 font-bold text-center whitespace-nowrap">STATUS MASTER</th>' +
+        '<th class="p-2.5 font-bold text-center whitespace-nowrap">INSIDEN CM</th>' +
+        '<th class="p-2.5 font-bold text-center whitespace-nowrap">KONDISI ARMADA</th>' +
+      '</tr>';
+
+      for (var k = 0; k < fleet.length; k++) {
+        var fm = fleet[k];
+        var isProb = fm.isProblem;
+        tbodyHtml += '<tr class="' + (isProb ? 'bg-rose-50/40 hover:bg-rose-50/70 font-semibold' : 'hover:bg-slate-50') + '">' +
+          '<td class="p-2.5 font-bold text-slate-400">' + (k + 1) + '</td>' +
+          '<td class="p-2.5 font-bold text-teal-900 whitespace-nowrap">' + escapeHtml(fm.idMesin) + '</td>' +
+          '<td class="p-2.5 font-bold text-slate-800 whitespace-nowrap">' + escapeHtml(fm.serialNumber) + '</td>' +
+          '<td class="p-2.5 whitespace-nowrap">' + escapeHtml(fm.bank) + '</td>' +
+          '<td class="p-2.5 text-center font-mono font-bold text-slate-700 whitespace-nowrap">' + escapeHtml(fm.zonaSla || 'Zona 2') + '</td>' +
+          '<td class="p-2.5 truncate max-w-xs" title="' + escapeHtml(fm.lokasi) + '">' + escapeHtml(fm.lokasi) + '</td>' +
+          '<td class="p-2.5 whitespace-nowrap text-slate-500">' + escapeHtml(fm.tipe) + '</td>' +
+          '<td class="p-2.5 whitespace-nowrap text-slate-700">' + escapeHtml(fm.fsePengelola) + '</td>' +
+          '<td class="p-2.5 text-center whitespace-nowrap"><span class="px-2 py-0.5 rounded text-[10px] font-bold ' + (fm.statusMesin.toLowerCase() === 'active' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-rose-50 text-rose-700 border border-rose-200') + '">' + escapeHtml(fm.statusMesin) + '</span></td>' +
+          '<td class="p-2.5 text-center font-mono font-extrabold ' + (isProb ? 'text-rose-700' : 'text-slate-400') + ' whitespace-nowrap">' + fm.incidentCount + 'x Tiket</td>' +
+          '<td class="p-2.5 text-center whitespace-nowrap">' + 
+            (isProb ? '<span class="px-2 py-0.5 rounded bg-rose-100 text-rose-800 font-bold text-[10px]"><i class="fa-solid fa-triangle-exclamation mr-1"></i>Terkena Insiden</span>' : '<span class="px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 font-bold text-[10px]"><i class="fa-solid fa-check mr-1"></i>Sehat Prima</span>') + 
+          '</td>' +
+        '</tr>';
+      }
+      rowCount = fleet.length;
+
+    } else if (metricType === 'clockstop') {
+      iconEl.className = 'w-10 h-10 rounded-xl bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center justify-center text-base shrink-0';
+      iconEl.innerHTML = '<i class="fa-solid fa-pause"></i>';
+      titleEl.innerText = 'Audit Interval Jeda Sah: Saved Excused Hours (Bank & Vendor Capped)';
+      subEl.innerText = 'Log seluruh rentang waktu status Waiting Vendor (Maks 120m) dan Pending Izin Lokasi Bank';
+
+      sheetNameEl.innerText = 'Tickets (Sheet Master Tiket)';
+      columnsListEl.innerText = 'ID_Tiket, Timeline_History, Alasan_Pending, Foto_Pending_Evidence';
+      formulaTextEl.innerText = 'Saved Time = SUM(Bank Custody Time) + SUM(min(Vendor Escrow Time, 120 Menit))';
+      summaryResultEl.innerHTML = '<span class="text-emerald-700 font-extrabold text-sm">' + (s.totalSavedHours || 0) + ' Jam</span> (' + (s.totalSavedMinutes || 0) + ' Menit Sah Dipotong dari Penalti SLA)';
+
+      theadHtml = '<tr>' +
+        '<th class="p-2.5 font-bold whitespace-nowrap">NO</th>' +
+        '<th class="p-2.5 font-bold whitespace-nowrap">ID TIKET</th>' +
+        '<th class="p-2.5 font-bold whitespace-nowrap">BANK &amp; MESIN</th>' +
+        '<th class="p-2.5 font-bold whitespace-nowrap">ENGINEER (FSE)</th>' +
+        '<th class="p-2.5 font-bold whitespace-nowrap">KATEGORI JEDA</th>' +
+        '<th class="p-2.5 font-bold whitespace-nowrap">ALASAN &amp; EVIDENCE</th>' +
+        '<th class="p-2.5 font-bold whitespace-nowrap">WAKTU MULAI</th>' +
+        '<th class="p-2.5 font-bold whitespace-nowrap">WAKTU SELESAI</th>' +
+        '<th class="p-2.5 font-bold text-center whitespace-nowrap">DURASI (MENIT)</th>' +
+        '<th class="p-2.5 font-bold text-center whitespace-nowrap">DURASI (JAM/MENIT)</th>' +
+        '<th class="p-2.5 font-bold text-center whitespace-nowrap">STATUS KOMPENSASI</th>' +
+      '</tr>';
+
+      if (pauses.length === 0) {
+        tbodyHtml = '<tr><td colspan="11" class="text-center py-8 text-slate-400 font-mono text-xs"><i class="fa-solid fa-circle-check text-emerald-500 text-xl mb-1 block"></i>Tidak ada tiket yang memasuki status Clock-Stop pada periode ini. Seluruh tiket dikerjakan nonstop.</td></tr>';
+      } else {
+        for (var p = 0; p < pauses.length; p++) {
+          var ps = pauses[p];
+          tbodyHtml += '<tr class="hover:bg-slate-50">' +
+            '<td class="p-2.5 font-bold text-slate-400">' + (p + 1) + '</td>' +
+            '<td class="p-2.5 font-bold text-teal-800 whitespace-nowrap">' + escapeHtml(ps.idTiket) + '</td>' +
+            '<td class="p-2.5 whitespace-nowrap font-medium text-slate-800">' + escapeHtml(ps.bank) + ' (' + escapeHtml(ps.serialNumber) + ')</td>' +
+            '<td class="p-2.5 whitespace-nowrap">' + escapeHtml(ps.namaEngineer) + '</td>' +
+            '<td class="p-2.5 whitespace-nowrap font-bold ' + (ps.category === 'Waiting Vendor' ? 'text-amber-700' : 'text-sky-800') + '">' + escapeHtml(ps.category) + '</td>' +
+            '<td class="p-2.5 truncate max-w-xs" title="' + escapeHtml(ps.reason) + '">' + escapeHtml(ps.reason) + '</td>' +
+            '<td class="p-2.5 whitespace-nowrap">' + escapeHtml(ps.startTime) + '</td>' +
+            '<td class="p-2.5 whitespace-nowrap font-semibold ' + (ps.endTime.indexOf('Sekarang') !== -1 ? 'text-amber-600 animate-pulse' : '') + '">' + escapeHtml(ps.endTime) + '</td>' +
+            '<td class="p-2.5 text-center font-bold whitespace-nowrap">' + ps.durationMins + ' m</td>' +
+            '<td class="p-2.5 text-center font-extrabold text-emerald-700 whitespace-nowrap">' + escapeHtml(ps.durationDisplay) + '</td>' +
+            '<td class="p-2.5 text-center whitespace-nowrap"><span class="px-2 py-0.5 rounded ' + (ps.statusKompensasi.indexOf('Beban Vendor') !== -1 ? 'bg-rose-100 text-rose-800 border border-rose-200' : 'bg-emerald-100 text-emerald-800') + ' font-bold text-[10px]">' + escapeHtml(ps.statusKompensasi) + '</span></td>' +
+          '</tr>';
+        }
+      }
+      rowCount = pauses.length;
+    }
+
+    if (thead) thead.innerHTML = theadHtml;
+    if (tbody) tbody.innerHTML = tbodyHtml;
+    if (counterEl) counterEl.innerText = rowCount + ' baris data audit';
+
+    if (modal) modal.classList.remove('hidden');
+  }
+
+  function closeSLAMetricDetailModal() {
+    var modal = document.getElementById('modal-sla-metric-detail');
+    if (modal) modal.classList.add('hidden');
+  }
+
+  function downloadActiveSLAMetricCSV() {
+    if (!cachedSLAResultData) return;
+
+    var metric = activeSLAMetricType || 'overall';
+    var meta = cachedSLAResultData.meta || {};
+    var s = cachedSLAResultData.summary || {};
+    var tickets = cachedSLAResultData.auditTickets || [];
+    var fleet = cachedSLAResultData.fleetAudit || [];
+    var pauses = cachedSLAResultData.pauseAudit || [];
+
+    var periodTag = (meta.filterMonth || 'Bulan_Aktif').replace(/[^a-zA-Z0-9_-]/g, '_');
+    var filename = 'Audit_SLA_' + metric.toUpperCase() + '_' + periodTag + '.csv';
+
+    var csvRows = [];
+
+    csvRows.push(['LAPORAN AUDIT SERVICE LEVEL AGREEMENT (SLA) BERKEADILAN']);
+    csvRows.push(['SISTEM', 'HARDIANSYAH FAM - MULTI-PARTY STOPWATCH & OLA CAPPING']);
+    csvRows.push(['PERIODE BULAN', meta.filterMonth || 'Bulan Aktif']);
+    csvRows.push(['FILTER BANK', meta.filterBank || 'ALL']);
+    csvRows.push(['WAKTU EVALUASI', meta.evaluatedAt || '-']);
+    csvRows.push(['PROPORSI WAKTU', 'Company: ' + (s.companyTimePercent || 0) + '% | Bank: ' + (s.bankTimePercent || 0) + '% | Vendor: ' + (s.vendorTimePercent || 0) + '%']);
+    csvRows.push([]);
+
+    if (metric === 'overall') {
+      csvRows.push(['METRIK', 'OVERALL SLA ACHIEVEMENT (%) - ZONASI GEOGRAFIS']);
+      csvRows.push(['SUMBER DATABASE', 'Tickets (Timeline_History, Solving) & Machines (Zona_SLA)']);
+      csvRows.push(['FORMULA', 'Net MTTR = Gross - (Bank Time + min(Vendor Time, 120m)) | Kepatuhan = Net MTTR <= Target Zona Mesin']);
+      csvRows.push(['HASIL EVALUASI', (s.slaAchievementRate || 100) + '% (' + (s.achievedCount || 0) + ' Achieved dari ' + (s.totalCMTickets || 0) + ' Tiket CM)']);
+      csvRows.push([]);
+      csvRows.push(['NO', 'ID TIKET', 'BANK', 'SERIAL NUMBER', 'ID MESIN', 'ZONA WILAYAH', 'ENGINEER', 'GROSS TIME', 'COMPANY TIME', 'BANK TIME', 'VENDOR TIME', 'VENDOR CHARGEBACK (>120m)', 'NET MTTR', 'TARGET ZONA', 'STATUS KEPATUHAN']);
+
+      for (var i = 0; i < tickets.length; i++) {
+        var t = tickets[i];
+        csvRows.push([
+          i + 1,
+          t.idTiket,
+          t.bank,
+          t.serialNumber,
+          t.idMesin,
+          t.zonaSla,
+          t.namaEngineer,
+          t.grossDisplay,
+          t.companyDisplay,
+          t.bankDisplay,
+          t.vendorDisplay,
+          t.vendorBreachMins > 0 ? (t.vendorBreachMins + ' Menit') : '0',
+          t.netDisplay,
+          t.targetSlaDisplay,
+          t.slaStatus
+        ]);
+      }
+
+    } else if (metric === 'mttr') {
+      csvRows.push(['METRIK', 'MULTI-PARTY STOPWATCH & AVERAGE NET MTTR']);
+      csvRows.push(['SUMBER DATABASE', 'Tickets (Timeline History 3 Arloji) & Machines (Zona_SLA)']);
+      csvRows.push(['FORMULA', 'Net MTTR = Gross (m) - (Bank Time + min(Vendor Time, 120m))']);
+      csvRows.push(['HASIL EVALUASI', s.avgNetMTTRDisplay + ' (Rata-rata Kotor: ' + s.avgGrossMTTRDisplay + ' | Total Jeda Sah: ' + s.totalSavedHours + ' Jam)']);
+      csvRows.push([]);
+      csvRows.push(['NO', 'ID TIKET', 'SERIAL NUMBER', 'ZONA', 'GROSS (MENIT)', 'COMPANY (MENIT)', 'BANK (MENIT)', 'VENDOR (MENIT)', 'VENDOR CAPPED (120M)', 'NET MTTR (MENIT)', 'NET MTTR DISPLAY', 'TARGET ZONA', 'DEVIASI TARGET']);
+
+      for (var j = 0; j < tickets.length; j++) {
+        var tk = tickets[j];
+        csvRows.push([
+          j + 1,
+          tk.idTiket,
+          tk.serialNumber,
+          tk.zonaSla,
+          tk.grossMins,
+          tk.companyMins,
+          tk.bankMins,
+          tk.vendorMins,
+          tk.vendorExcusedMins,
+          tk.netMins,
+          tk.netDisplay,
+          tk.targetSlaDisplay,
+          tk.deviationDisplay
+        ]);
+      }
+
+    } else if (metric === 'fleet') {
+      csvRows.push(['METRIK', 'FLEET INCIDENT RATE & FLEET AVAILABILITY (%)']);
+      csvRows.push(['SUMBER DATABASE', 'Spreadsheet: Machines (Master Inventaris & Zona) & Tickets (Insiden CM)']);
+      csvRows.push(['FORMULA', 'Incident Rate = (Mesin Problem / Total Mesin Aktif) * 100% | Availability = 100% - Incident Rate']);
+      csvRows.push(['HASIL EVALUASI', (s.fleetIncidentRate || 0) + '% Incident Rate | ' + (s.fleetAvailabilityRate || 100) + '% Fleet Availability']);
+      csvRows.push([]);
+      csvRows.push(['NO', 'ID MESIN', 'SERIAL NUMBER', 'BANK', 'ZONA SLA', 'LOKASI ATM', 'TIPE MESIN', 'FSE PENGELOLA', 'STATUS MASTER MESIN', 'FREKUENSI CM', 'KONDISI ARMADA']);
+
+      for (var k = 0; k < fleet.length; k++) {
+        var fm = fleet[k];
+        csvRows.push([
+          k + 1,
+          fm.idMesin,
+          fm.serialNumber,
+          fm.bank,
+          fm.zonaSla || 'Zona 2',
+          fm.lokasi,
+          fm.tipe,
+          fm.fsePengelola,
+          fm.statusMesin,
+          fm.incidentCount,
+          fm.statusArmada
+        ]);
+      }
+
+    } else if (metric === 'clockstop') {
+      csvRows.push(['METRIK', 'SAVED EXCUSED HOURS (BANK & VENDOR CAPPED 120M)']);
+      csvRows.push(['SUMBER DATABASE', 'Spreadsheet: Tickets (Waiting Vendor & Pending Lokasi Tutup)']);
+      csvRows.push(['FORMULA', 'Akumulasi Bank Custody Time + min(Vendor Escrow Time, 120 Menit)']);
+      csvRows.push(['HASIL EVALUASI', s.totalSavedHours + ' Jam (' + (s.totalSavedMinutes || 0) + ' Menit Sah Dipotong dari Penalti Perusahaan)']);
+      csvRows.push([]);
+      csvRows.push(['NO', 'ID TIKET', 'BANK', 'SERIAL NUMBER', 'ID MESIN', 'ENGINEER', 'KATEGORI CLOCK-STOP', 'ALASAN / CATATAN', 'WAKTU MULAI', 'WAKTU SELESAI', 'DURASI (MENIT)', 'DURASI (JAM/MENIT)', 'STATUS KOMPENSASI']);
+
+      for (var p = 0; p < pauses.length; p++) {
+        var ps = pauses[p];
+        csvRows.push([
+          p + 1,
+          ps.idTiket,
+          ps.bank,
+          ps.serialNumber,
+          ps.idMesin,
+          ps.namaEngineer,
+          ps.category,
+          ps.reason,
+          ps.startTime,
+          ps.endTime,
+          ps.durationMins,
+          ps.durationDisplay,
+          ps.statusKompensasi
+        ]);
+      }
+    }
+
+    downloadCSVContent(csvRows, filename);
   }
 </script>

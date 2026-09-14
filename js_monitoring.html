@@ -4,9 +4,11 @@
      Dashboard Metrics, Master FSE Horizontal,
      Fitur Alihkan Penugasan Tiket (Re-Assign FSE),
      Manajemen Akun Karyawan Universal (FSE, Monitoring, Super Admin),
+     Pembatasan Hak Akses Ketat Role Admin (Read-Only di Tiket & Mesin),
      Database Mesin dengan Dropdown Interaktif FSE Pengelola & Status,
      SLA Achievement Berkeadilan (Tri-Party Stopwatch, Vendor OLA Capping 120m,
-     Geographic Zoning, Repeat Problem Watchlist, & Leaderboard Reporting FSE).
+     Geographic Zoning, Repeat Problem Watchlist, & Leaderboard Reporting FSE),
+     serta Controller Lengkap Modul KPI Achievement Scorecard 3 Pilar.
      ======================================================== -->
 <script>
   var currentTicketTypeFilter = 'ALL';
@@ -22,7 +24,16 @@
   var cachedUsersList = [];
   var activeReassignTicket = null;
 
+  /* State KPI Achievement */
+  var cachedKPIResultData = null;
+  var activeKPIPillarFilter = 'ALL';
+
   function openCreateTicketModal() {
+    if (currentUser && currentUser.roleKey === 'admin') {
+      showToast('Akses Dibatasi', 'Role Admin FE Report hanya memiliki akses verifikasi di menu Admin FE Report.', 'error');
+      return;
+    }
+
     var modal = document.getElementById('modal-create-ticket');
     modal.classList.remove('hidden');
 
@@ -46,6 +57,11 @@
 
   function handleFormSubmit(event) {
     event.preventDefault();
+
+    if (currentUser && currentUser.roleKey === 'admin') {
+      showToast('Akses Dibatasi', 'Role Admin FE Report tidak diizinkan menerbitkan tiket.', 'error');
+      return;
+    }
 
     var payload = {
       idTiket: String(document.getElementById('input-ticket-id').value).trim(),
@@ -78,7 +94,6 @@
     }
   }
 
-  /* Submenu Pemilah Tipe Tiket: Semua, CM, PM, UAT */
   function setTicketTypeFilter(type) {
     currentTicketTypeFilter = type || 'ALL';
 
@@ -251,7 +266,8 @@
       return;
     }
 
-    var isMonitoring = (currentUser && (currentUser.roleKey === 'monitoring' || currentUser.roleKey === 'admin'));
+    var isAdmin = (currentUser && currentUser.roleKey === 'admin');
+    var isMonitoring = (currentUser && (currentUser.roleKey === 'monitoring' || currentUser.roleKey === 'superadmin'));
     var html = '';
 
     for (var i = 0; i < displayTickets.length; i++) {
@@ -260,7 +276,6 @@
       var stLower = String(t.statusTiket || '').toLowerCase();
       var slaAlert = getMonitoringTicketSLAWarning(t);
 
-      // Indikator Repeat Problem 7 Hari
       var repeatBadge = '';
       if (t.repeatCount7d && t.repeatCount7d >= 2) {
         var isHighRepeat = (t.repeatCount7d >= 3);
@@ -290,7 +305,6 @@
 
       var timeOpenDisplay = (t.tanggalTiket || '-') + ' ' + (t.jamTiket || '') + ' WIB';
 
-      // Cek apakah tiket masih aktif (bisa dialihkan penugasannya)
       var canReassign = isMonitoring && (
         stLower !== 'closed' && 
         stLower !== 'cancel' && 
@@ -313,23 +327,24 @@
       html += '<td class="p-3 text-center whitespace-nowrap">';
       html += '<div class="flex items-center justify-center gap-1.5">';
       
-      // Tombol 1: Riwayat Audit
       html += '<button onclick="openFSETimelineModal(\'' + escapeHtml(t.idTiket) + '\')" title="Lihat Riwayat" class="px-2.5 py-1 text-[11px] rounded-lg bg-teal-50 border border-teal-200 text-teal-700 hover:bg-teal-600 hover:text-white transition flex items-center gap-1 shadow-sm font-medium">';
       html += '<i class="fa-solid fa-clock-rotate-left text-[10px]"></i> Riwayat';
       html += '</button>';
 
-      // Tombol 2: Alihkan FSE (Re-Assign) untuk Tiket Aktif
       if (canReassign) {
         html += '<button onclick="openReassignTicketModal(\'' + escapeHtml(t.idTiket) + '\')" title="Alihkan Penugasan Teknisi (FSE Izin/Sakit)" class="px-2.5 py-1 text-[11px] rounded-lg bg-amber-50 border border-amber-200 text-amber-800 hover:bg-amber-600 hover:text-white transition flex items-center gap-1 shadow-sm font-semibold">';
         html += '<i class="fa-solid fa-people-arrows text-[10px]"></i> Alihkan';
         html += '</button>';
       }
 
-      // Tombol 3: Closed Permanen untuk Tiket Solved
       if (isMonitoring && (stLower === 'solved' || stLower === 'solving')) {
-        html += '<button onclick="executeTicketAction(\'' + escapeHtml(t.idTiket) + '\', \'Closed\', { note: \'Tiket ditutup permanen oleh Monitoring\' })" title="Tutup Tiket Permanen (Pindah ke Kirim Dokumen FSE)" class="px-2.5 py-1 text-[11px] rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold transition flex items-center gap-1 shadow-sm">';
+        html += '<button onclick="executeTicketAction(\'' + escapeHtml(t.idTiket) + '\', \'Closed\', { note: \'Tiket ditutup permanen oleh Monitoring\' })" title="Tutup Tiket Permanen" class="px-2.5 py-1 text-[11px] rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold transition flex items-center gap-1 shadow-sm">';
         html += '<i class="fa-solid fa-lock text-[10px]"></i> Closed';
         html += '</button>';
+      }
+
+      if (isAdmin) {
+        html += '<span class="text-slate-400 font-mono text-[10px] italic">Read-Only</span>';
       }
 
       html += '</div>';
@@ -341,10 +356,12 @@
     renderDashboardRecent(tickets);
   }
 
-  /* ========================================================
-     FITUR 1: LOGIKA ALIKAN PENUGASAN TIKET (RE-ASSIGN FSE)
-     ======================================================== */
   function openReassignTicketModal(ticketId) {
+    if (currentUser && currentUser.roleKey === 'admin') {
+      showToast('Akses Dibatasi', 'Role Admin FE Report tidak diizinkan mengalihkan penugasan tiket.', 'error');
+      return;
+    }
+
     var ticket = (currentTicketsList || []).find(function(t) { return t.idTiket === ticketId; });
     if (!ticket) {
       showToast('Error', 'Data tiket tidak ditemukan.', 'error');
@@ -370,7 +387,6 @@
     if (elCurrentFse) elCurrentFse.innerText = ticket.namaEngineer || 'Belum Ditugaskan';
     if (elReason) elReason.value = '';
 
-    // Isi daftar FSE pengganti yang aktif dan bukan FSE saat ini
     var currentEngineer = String(ticket.namaEngineer || '').trim().toLowerCase();
     var fseOptions = '<option value="">-- Pilih Teknisi Pengganti --</option>';
 
@@ -383,9 +399,7 @@
       var engName = String(eng.nama || eng).trim();
       var engWilayah = String(eng.wilayah || 'Jabodetabek').trim();
       
-      // Lewati teknisi yang sedang memegang tiket ini saat ini
       if (engName.toLowerCase() === currentEngineer) continue;
-
       fseOptions += '<option value="' + escapeHtml(engName) + '">' + escapeHtml(engName) + ' (' + escapeHtml(engWilayah) + ')</option>';
     }
 
@@ -404,6 +418,11 @@
   function submitReassignTicket(event) {
     if (event) event.preventDefault();
     if (!activeReassignTicket) return;
+
+    if (currentUser && currentUser.roleKey === 'admin') {
+      showToast('Akses Dibatasi', 'Role Admin FE Report tidak diizinkan mengalihkan tiket.', 'error');
+      return;
+    }
 
     var ticketId = activeReassignTicket.idTiket;
     var selectNewFse = document.getElementById('reassign-new-fse');
@@ -465,9 +484,6 @@
     }
   }
 
-  /* ========================================================
-     FITUR 2: LOGIKA SUB-TAB KARYAWAN & REGISTRASI UNIVERSAL
-     ======================================================== */
   function switchUserTab(tabName) {
     currentUserTab = tabName || 'fse';
 
@@ -484,14 +500,14 @@
       if (contentFSE) contentFSE.classList.remove('hidden');
       if (contentStaff) contentStaff.classList.add('hidden');
       if (labelTab) labelTab.innerText = 'Daftar Teknisi Lapangan (FSE)';
-      if (btnCSV) btnCSV.classList.remove('hidden');
+      if (btnCSV && currentUser && currentUser.roleKey !== 'admin') btnCSV.classList.remove('hidden');
       renderFSETable(currentFSEList);
     } else {
       if (btnStaff) btnStaff.className = 'user-tab-pill active px-3.5 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 text-slate-800 bg-white shadow-sm border border-slate-200/60';
       if (btnFSE) btnFSE.className = 'user-tab-pill px-3.5 py-1.5 rounded-xl text-xs font-semibold text-slate-600 hover:text-slate-800 transition flex items-center gap-1.5';
       if (contentStaff) contentStaff.classList.remove('hidden');
       if (contentFSE) contentFSE.classList.add('hidden');
-      if (labelTab) labelTab.innerText = 'Daftar Petugas Monitoring & Super Admin';
+      if (labelTab) labelTab.innerText = 'Daftar Petugas Monitoring & Admin FE Report';
       if (btnCSV) btnCSV.classList.add('hidden');
       loadUsersData();
     }
@@ -543,12 +559,16 @@
   }
 
   function openCreateUserModal() {
+    if (currentUser && currentUser.roleKey === 'admin') {
+      showToast('Akses Dibatasi', 'Role Admin FE Report tidak memiliki wewenang mendaftarkan pengguna baru.', 'error');
+      return;
+    }
+
     var form = document.getElementById('form-new-user');
     if (form) form.reset();
 
     var roleSelect = document.getElementById('input-user-role');
     if (roleSelect) {
-      // Set default sesuai tab yang aktif saat ini
       roleSelect.value = (currentUserTab === 'staff') ? 'Monitoring' : 'FSE';
       handleUserRoleChange(roleSelect.value);
     }
@@ -581,6 +601,11 @@
 
   function handleCreateUserSubmit(event) {
     if (event) event.preventDefault();
+
+    if (currentUser && currentUser.roleKey === 'admin') {
+      showToast('Akses Dibatasi', 'Role Admin FE Report tidak memiliki wewenang mendaftarkan akun.', 'error');
+      return;
+    }
 
     var role = document.getElementById('input-user-role').value;
     var nama = document.getElementById('input-user-nama').value.trim();
@@ -646,7 +671,7 @@
   function loadUsersData() {
     var tbody = document.getElementById('staff-table-body');
     if (tbody) {
-      tbody.innerHTML = '<tr><td colspan="8" class="text-center py-8 text-slate-400 font-mono text-xs"><i class="fa-solid fa-spinner fa-spin text-teal-600 mr-2 text-base"></i>Memuat daftar akun Monitoring &amp; Super Admin...</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="8" class="text-center py-8 text-slate-400 font-mono text-xs"><i class="fa-solid fa-spinner fa-spin text-teal-600 mr-2 text-base"></i>Memuat daftar akun Monitoring &amp; Admin...</td></tr>';
     }
 
     if (typeof google !== 'undefined' && google.script && google.script.run) {
@@ -675,7 +700,7 @@
       return;
     }
 
-    var isMonitoring = (currentUser && (currentUser.roleKey === 'monitoring' || currentUser.roleKey === 'admin'));
+    var isMonitoring = (currentUser && (currentUser.roleKey === 'monitoring' || currentUser.roleKey === 'superadmin'));
     var html = '';
 
     for (var i = 0; i < list.length; i++) {
@@ -684,7 +709,7 @@
       var roleBadge = '<span class="px-2 py-0.5 rounded-md font-bold text-[10px] bg-slate-100 text-slate-700 border border-slate-200">' + escapeHtml(u.role) + '</span>';
 
       if (roleLower.indexOf('admin') !== -1) {
-        roleBadge = '<span class="px-2 py-0.5 rounded-md font-bold text-[10px] bg-purple-50 text-purple-700 border border-purple-200 flex items-center gap-1 inline-flex"><i class="fa-solid fa-user-shield text-[9px]"></i>Super Admin</span>';
+        roleBadge = '<span class="px-2 py-0.5 rounded-md font-bold text-[10px] bg-purple-50 text-purple-700 border border-purple-200 flex items-center gap-1 inline-flex"><i class="fa-solid fa-user-shield text-[9px]"></i>Admin FE</span>';
       } else if (roleLower.indexOf('monitoring') !== -1 || roleLower.indexOf('noc') !== -1) {
         roleBadge = '<span class="px-2 py-0.5 rounded-md font-bold text-[10px] bg-indigo-50 text-indigo-700 border border-indigo-200 flex items-center gap-1 inline-flex"><i class="fa-solid fa-desktop text-[9px]"></i>Monitoring</span>';
       } else if (roleLower.indexOf('fse') !== -1) {
@@ -719,6 +744,11 @@
   }
 
   function toggleUserStatusAction(userId, currentStatus) {
+    if (currentUser && currentUser.roleKey === 'admin') {
+      showToast('Akses Dibatasi', 'Role Admin FE Report tidak memiliki wewenang mengubah status akun.', 'error');
+      return;
+    }
+
     if (typeof google !== 'undefined' && google.script && google.script.run) {
       google.script.run
         .withSuccessHandler(function(res) {
@@ -737,7 +767,6 @@
     }
   }
 
-  // Menjaga kompatibilitas jika masih ada tombol lama yang memanggil openCreateFSEModal
   function openCreateFSEModal() {
     openCreateUserModal();
   }
@@ -821,6 +850,11 @@
       return;
     }
 
+    if (section === 'KPIAchievement') {
+      loadKPIAchievementData();
+      return;
+    }
+
     if (section === 'Users') {
       loadUsersData();
       return;
@@ -848,7 +882,7 @@
       return;
     }
 
-    var isMonitoring = (currentUser && (currentUser.roleKey === 'monitoring' || currentUser.roleKey === 'admin'));
+    var isMonitoring = (currentUser && (currentUser.roleKey === 'monitoring' || currentUser.roleKey === 'superadmin'));
     var html = '';
 
     for (var i = 0; i < list.length; i++) {
@@ -890,6 +924,11 @@
   }
 
   function openEditFSEModal(userId) {
+    if (currentUser && currentUser.roleKey === 'admin') {
+      showToast('Akses Dibatasi', 'Role Admin FE Report tidak memiliki wewenang mengedit data FSE.', 'error');
+      return;
+    }
+
     var target = currentFSEList.find(function(item) { return item.userId === userId; });
     if (!target) return;
     document.getElementById('edit-fse-userid').value = target.userId;
@@ -904,6 +943,11 @@
 
   function handleEditFSESubmit(e) {
     e.preventDefault();
+    if (currentUser && currentUser.roleKey === 'admin') {
+      showToast('Akses Dibatasi', 'Role Admin FE Report tidak memiliki wewenang mengedit data FSE.', 'error');
+      return;
+    }
+
     var payload = {
       userId: document.getElementById('edit-fse-userid').value,
       nama: document.getElementById('edit-fse-nama').value.trim(),
@@ -937,7 +981,7 @@
       return;
     }
 
-    var isMonitoring = (currentUser && (currentUser.roleKey === 'monitoring' || currentUser.roleKey === 'admin'));
+    var isMonitoring = (currentUser && (currentUser.roleKey === 'monitoring' || currentUser.roleKey === 'superadmin'));
 
     var engList = [];
     if (cachedDropdowns && cachedDropdowns.engineers && cachedDropdowns.engineers.length > 0) {
@@ -1000,6 +1044,11 @@
   }
 
   function handleMachineFSEChange(idMesin, serialNumber, newFse) {
+    if (currentUser && currentUser.roleKey === 'admin') {
+      showToast('Akses Dibatasi', 'Role Admin FE Report tidak memiliki wewenang mengubah penugasan FSE pada mesin.', 'error');
+      return;
+    }
+
     showToast('Memperbarui FSE', 'Menugaskan FSE ' + (newFse === '-' ? 'Kosong' : newFse) + ' ke ATM ' + (idMesin || serialNumber) + '...', 'success');
 
     if (typeof google !== 'undefined' && google.script && google.script.run) {
@@ -1021,6 +1070,11 @@
   }
 
   function handleMachineStatusChange(idMesin, serialNumber, newStatus) {
+    if (currentUser && currentUser.roleKey === 'admin') {
+      showToast('Akses Dibatasi', 'Role Admin FE Report tidak memiliki wewenang mengubah status mesin.', 'error');
+      return;
+    }
+
     showToast('Memperbarui Status', 'Mengubah status ATM ' + (idMesin || serialNumber) + ' ke ' + newStatus + '...', 'success');
 
     if (typeof google !== 'undefined' && google.script && google.script.run) {
@@ -1206,7 +1260,7 @@
     if (!cachedFSEReportingData) return;
 
     var filtered = cachedFSEReportingData.filter(function(item) {
-      if (!query) return true;
+      if (!q) return true;
       return (
         item.nama.toLowerCase().indexOf(q) !== -1 ||
         item.wilayah.toLowerCase().indexOf(q) !== -1 ||
@@ -1217,7 +1271,6 @@
     renderFSELeaderboard(filtered);
   }
 
-  /* MODAL DETAIL KINERJA FSE */
   function openFSEPerformanceModal(userId) {
     if (!cachedFSEReportingData) return;
 
@@ -1402,24 +1455,7 @@
   }
 
   function renderKPIScorecards() {
-    var container = document.getElementById('kpi-scorecard-container');
-    if (!container) return;
-
-    var kpis = [
-      { title: 'Ticket Dispatch Speed (Role Monitoring)', target: 'Maks. 15 Menit', actual: '8.4 Menit', score: '98.8%' },
-      { title: 'FSE MTTR (Mean Time to Repair)', target: 'Maks. 4.0 Jam', actual: '2.6 Jam', score: '96.5%' },
-      { title: 'ATM First Visit Resolution Rate', target: 'Min. 90.0%', actual: '94.2%', score: '104.6%' }
-    ];
-
-    var html = '';
-    for (var i = 0; i < kpis.length; i++) {
-      var k = kpis[i];
-      html += '<div class="soft-card-panel p-4 flex items-center justify-between">';
-      html += '<div><h4 class="font-semibold text-sm text-slate-800">' + escapeHtml(k.title) + '</h4><p class="text-slate-500 text-xs">Target: ' + escapeHtml(k.target) + ' | Aktual: <span class="font-mono font-bold text-slate-800">' + escapeHtml(k.actual) + '</span></p></div>';
-      html += '<div class="text-right font-mono font-bold text-teal-700 text-lg">' + escapeHtml(k.score) + '</div>';
-      html += '</div>';
-    }
-    container.innerHTML = html;
+    loadKPIAchievementData();
   }
 
   function openReceiveHardcopyModal(ticketId) {
@@ -1450,6 +1486,11 @@
   }
 
   function openCSVImportModal(targetType) {
+    if (currentUser && currentUser.roleKey === 'admin') {
+      showToast('Akses Dibatasi', 'Role Admin FE Report tidak memiliki wewenang mengimpor CSV.', 'error');
+      return;
+    }
+
     document.getElementById('form-import-csv').reset();
     document.getElementById('csv-target-type').value = targetType;
 
@@ -1484,6 +1525,11 @@
 
   function handleCSVImportSubmit(event) {
     event.preventDefault();
+    if (currentUser && currentUser.roleKey === 'admin') {
+      showToast('Akses Dibatasi', 'Role Admin FE Report tidak memiliki wewenang mengimpor CSV.', 'error');
+      return;
+    }
+
     var targetType = document.getElementById('csv-target-type').value;
     var fileInput = document.getElementById('input-csv-file');
 
@@ -1848,7 +1894,6 @@
     renderSLAAuditTable(filtered);
   }
 
-  /* MODAL POPUP: DETAIL AUDIT SPREADSHEET SLA */
   function openSLAMetricDetailModal(metricType) {
     if (!cachedSLAResultData) {
       showToast('Memuat Data', 'Mengambil data SLA terlebih dahulu...', 'info');
@@ -2224,6 +2269,267 @@
           ps.statusKompensasi
         ]);
       }
+    }
+
+    downloadCSVContent(csvRows, filename);
+  }
+
+  /* ========================================================
+     MODUL BARU: KPI ACHIEVEMENT SCORECARD (3 PILAR OPERASIONAL)
+     ======================================================== */
+
+  function loadKPIAchievementData(filterMonth) {
+    var monthEl = document.getElementById('filter-kpi-month');
+    if (monthEl && !monthEl.value) {
+      var now = new Date();
+      var yr = now.getFullYear();
+      var mo = ('0' + (now.getMonth() + 1)).slice(-2);
+      monthEl.value = yr + '-' + mo;
+    }
+
+    var selectedMonth = filterMonth || (monthEl ? monthEl.value : '');
+
+    var heroScoreEl = document.getElementById('kpi-hero-score');
+    var cardsGrid = document.getElementById('kpi-cards-grid');
+    var matrixTbody = document.getElementById('kpi-matrix-table-body');
+
+    if (cardsGrid) {
+      cardsGrid.innerHTML = '<div class="col-span-3 text-center py-10 text-slate-400 font-mono text-xs"><i class="fa-solid fa-spinner fa-spin text-teal-600 mr-2 text-base"></i>Mengkalkulasi raport KPI 3 pilar operasional...</div>';
+    }
+    if (matrixTbody) {
+      matrixTbody.innerHTML = '<tr><td colspan="9" class="text-center py-8 text-slate-400 font-mono text-xs"><i class="fa-solid fa-spinner fa-spin text-teal-600 mr-2"></i>Menyusun tabel matriks transparansi bobot...</td></tr>';
+    }
+
+    if (typeof google !== 'undefined' && google.script && google.script.run) {
+      google.script.run
+        .withSuccessHandler(function(res) {
+          if (res && res.status === 'success') {
+            cachedKPIResultData = res;
+            renderKPISummary(res.summary);
+            filterKPIPillars(activeKPIPillarFilter || 'ALL');
+            renderKPIMatrix(res.matrixRows || []);
+          } else {
+            showToast('Gagal Memuat KPI', res ? res.message : 'Error server', 'error');
+            if (cardsGrid) cardsGrid.innerHTML = '<div class="col-span-3 text-center py-6 text-rose-500 text-xs">Gagal: ' + (res ? res.message : 'Error') + '</div>';
+            if (matrixTbody) matrixTbody.innerHTML = '<tr><td colspan="9" class="text-center py-6 text-rose-500 text-xs">Gagal memuat data.</td></tr>';
+          }
+        })
+        .withFailureHandler(function(err) {
+          showToast('Error Server', 'Kendala server: ' + err, 'error');
+          if (cardsGrid) cardsGrid.innerHTML = '<div class="col-span-3 text-center py-6 text-rose-500 text-xs">Error backend: ' + err + '</div>';
+          if (matrixTbody) matrixTbody.innerHTML = '<tr><td colspan="9" class="text-center py-6 text-rose-500 text-xs">Error backend: ' + err + '</td></tr>';
+        })
+        .getKPIAchievementData(selectedMonth);
+    } else {
+      // Mockup demo offline fallback
+      var mockSummary = {
+        compositeHealthScore: 97.4,
+        grade: 'GRADE A (EXCELLENT)',
+        gradeDescription: 'Performa operasional ATM secara menyeluruh berada pada kondisi sangat prima.',
+        pilarNOCScore: 98.8,
+        pilarFSEScore: 96.5,
+        pilarAdminScore: 99.2
+      };
+      renderKPISummary(mockSummary);
+    }
+  }
+
+  function renderKPISummary(summary) {
+    if (!summary) return;
+
+    var heroScore = document.getElementById('kpi-hero-score');
+    var heroGrade = document.getElementById('kpi-hero-grade');
+    var heroDesc = document.getElementById('kpi-hero-desc');
+
+    var miniNOC = document.getElementById('kpi-mini-noc-score');
+    var miniFSE = document.getElementById('kpi-mini-fse-score');
+    var miniADM = document.getElementById('kpi-mini-adm-score');
+
+    if (heroScore) heroScore.innerText = (summary.compositeHealthScore || 0).toFixed(1);
+    if (heroGrade) {
+      heroGrade.innerText = summary.grade || 'GRADE A (EXCELLENT)';
+      if (summary.compositeHealthScore < 75) {
+        heroGrade.className = 'px-3 py-1 rounded-xl text-xs font-extrabold bg-rose-500/20 text-rose-300 border border-rose-400/40 tracking-wide';
+      } else if (summary.compositeHealthScore < 90) {
+        heroGrade.className = 'px-3 py-1 rounded-xl text-xs font-extrabold bg-amber-500/20 text-amber-300 border border-amber-400/40 tracking-wide';
+      } else {
+        heroGrade.className = 'px-3 py-1 rounded-xl text-xs font-extrabold bg-emerald-500/20 text-emerald-300 border border-emerald-400/40 tracking-wide';
+      }
+    }
+
+    if (heroDesc) heroDesc.innerText = summary.gradeDescription || '-';
+    if (miniNOC) miniNOC.innerText = (summary.pilarNOCScore || 0).toFixed(1) + '%';
+    if (miniFSE) miniFSE.innerText = (summary.pilarFSEScore || 0).toFixed(1) + '%';
+    if (miniADM) miniADM.innerText = (summary.pilarAdminScore || 0).toFixed(1) + '%';
+  }
+
+  function filterKPIPillars(pillarKey) {
+    activeKPIPillarFilter = pillarKey || 'ALL';
+
+    var tabAll = document.getElementById('tab-kpi-all');
+    var tabNoc = document.getElementById('tab-kpi-noc');
+    var tabFse = document.getElementById('tab-kpi-fse');
+    var tabAdm = document.getElementById('tab-kpi-admin');
+
+    var allTabs = [tabAll, tabNoc, tabFse, tabAdm];
+    for (var t = 0; t < allTabs.length; t++) {
+      if (allTabs[t]) {
+        allTabs[t].className = 'kpi-pillar-tab px-3.5 py-2 rounded-xl text-xs font-semibold text-slate-600 hover:text-slate-800 transition flex items-center gap-1.5 shrink-0';
+      }
+    }
+
+    var activeBtn = tabAll;
+    if (pillarKey === 'NOC') activeBtn = tabNoc;
+    else if (pillarKey === 'FSE') activeBtn = tabFse;
+    else if (pillarKey === 'ADMIN') activeBtn = tabAdm;
+
+    if (activeBtn) {
+      activeBtn.className = 'kpi-pillar-tab active px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 text-slate-800 bg-white shadow-sm border border-slate-200/60 shrink-0';
+    }
+
+    if (!cachedKPIResultData || !cachedKPIResultData.kpiCards) return;
+
+    var cards = cachedKPIResultData.kpiCards;
+    var filteredCards = cards;
+
+    if (pillarKey !== 'ALL') {
+      filteredCards = cards.filter(function(item) {
+        return item.pillar === pillarKey;
+      });
+    }
+
+    renderKPICards(filteredCards);
+  }
+
+  function renderKPICards(cards) {
+    var grid = document.getElementById('kpi-cards-grid');
+    if (!grid) return;
+
+    if (!cards || cards.length === 0) {
+      grid.innerHTML = '<div class="col-span-3 text-center py-8 text-slate-400 font-mono text-xs">Tidak ada indikator KPI pada pilar ini.</div>';
+      return;
+    }
+
+    var html = '';
+    for (var i = 0; i < cards.length; i++) {
+      var k = cards[i];
+      var scoreVal = parseFloat(k.scoreNum || k.score) || 100;
+      var barWidth = Math.min(100, Math.max(5, scoreVal));
+
+      html += '<div class="p-4 rounded-2xl bg-white border border-slate-200/80 shadow-sm flex flex-col justify-between hover:border-teal-400 hover:shadow-md transition relative group select-none">';
+      
+      html += '<div class="flex items-start justify-between gap-2 mb-2 pb-2 border-b border-slate-100">';
+      html += '<div>';
+      html += '<span class="text-[10px] font-mono font-bold text-slate-400 uppercase tracking-wide block">' + escapeHtml(k.pillarTitle) + '</span>';
+      html += '<h4 class="font-bold text-xs text-slate-800 mt-0.5 group-hover:text-teal-700 transition flex items-center gap-1.5">';
+      html += '<i class="' + (k.icon || 'fa-solid fa-chart-simple') + ' text-teal-600"></i>';
+      html += '<span>' + escapeHtml(k.title) + '</span>';
+      html += '</h4>';
+      html += '</div>';
+      html += '<span class="px-2 py-0.5 rounded-lg text-[10px] font-mono font-bold bg-slate-100 text-slate-700 border border-slate-200 shrink-0">Bobot ' + escapeHtml(k.weightPercent) + '</span>';
+      html += '</div>';
+
+      html += '<div class="space-y-1 my-1">';
+      html += '<div class="flex items-baseline justify-between">';
+      html += '<span class="text-xs text-slate-500 font-medium">Capaian Aktual:</span>';
+      html += '<span class="text-lg font-mono font-extrabold text-slate-900">' + escapeHtml(k.actual) + '</span>';
+      html += '</div>';
+      html += '<div class="flex items-center justify-between text-[11px] text-slate-500">';
+      html += '<span>Benchmark Target: <b class="text-slate-700 font-mono">' + escapeHtml(k.target) + '</b></span>';
+      html += '<span class="font-mono font-bold text-teal-700">' + escapeHtml(k.score) + ' Score</span>';
+      html += '</div>';
+      html += '</div>';
+
+      html += '<div class="h-2 w-full bg-slate-100 rounded-full my-2 overflow-hidden">';
+      html += '<div class="h-full bg-gradient-to-r ' + (k.barGradient || 'from-teal-500 to-emerald-500') + ' rounded-full transition-all duration-500" style="width: ' + barWidth + '%;"></div>';
+      html += '</div>';
+
+      html += '<div class="pt-2 border-t border-slate-100 flex items-center justify-between gap-2">';
+      html += '<span class="text-[10px] text-slate-500 truncate max-w-[200px]" title="' + escapeHtml(k.note || '-') + '">' + escapeHtml(k.note || '-') + '</span>';
+      html += '<span class="px-2 py-0.5 rounded-md text-[10px] font-bold border ' + (k.colorClass || 'bg-emerald-50 text-emerald-700 border-emerald-200') + ' whitespace-nowrap">' + escapeHtml(k.status) + '</span>';
+      html += '</div>';
+
+      html += '</div>';
+    }
+
+    grid.innerHTML = html;
+  }
+
+  function renderKPIMatrix(matrixRows) {
+    var tbody = document.getElementById('kpi-matrix-table-body');
+    if (!tbody) return;
+
+    if (!matrixRows || matrixRows.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="9" class="text-center py-6 text-slate-400 font-mono text-xs">Belum ada baris matriks KPI.</td></tr>';
+      return;
+    }
+
+    var html = '';
+    for (var i = 0; i < matrixRows.length; i++) {
+      var r = matrixRows[i];
+      var isAchieved = (r.status === 'Achieved');
+      var statusBadge = isAchieved
+        ? '<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200"><i class="fa-solid fa-check mr-1"></i>Achieved</span>'
+        : '<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200">' + escapeHtml(r.status) + '</span>';
+
+      html += '<tr class="hover:bg-slate-50 transition font-mono text-xs text-slate-700">';
+      html += '<td class="p-3 text-center font-bold text-slate-400">' + r.no + '</td>';
+      html += '<td class="p-3 font-sans font-bold text-slate-800 whitespace-nowrap">' + escapeHtml(r.kpi) + '</td>';
+      html += '<td class="p-3 font-sans whitespace-nowrap"><span class="px-2 py-0.5 rounded-md font-bold text-[10px] bg-slate-100 text-slate-700 border border-slate-200">' + escapeHtml(r.pilar) + '</span></td>';
+      html += '<td class="p-3 text-center font-bold text-slate-800 whitespace-nowrap">' + escapeHtml(r.bobot) + '</td>';
+      html += '<td class="p-3 whitespace-nowrap text-slate-600">' + escapeHtml(r.target) + '</td>';
+      html += '<td class="p-3 text-center font-bold text-slate-800 whitespace-nowrap">' + escapeHtml(r.actual) + '</td>';
+      html += '<td class="p-3 text-center font-extrabold text-teal-700 whitespace-nowrap">' + escapeHtml(r.score) + '</td>';
+      html += '<td class="p-3 text-center font-extrabold text-indigo-700 whitespace-nowrap">' + escapeHtml(r.weighted) + '</td>';
+      html += '<td class="p-3 text-center whitespace-nowrap">' + statusBadge + '</td>';
+      html += '</tr>';
+    }
+
+    tbody.innerHTML = html;
+  }
+
+  function exportKPICSV() {
+    if (!cachedKPIResultData) {
+      showToast('Peringatan', 'Silakan muat data KPI terlebih dahulu.', 'error');
+      return;
+    }
+
+    var meta = cachedKPIResultData.meta || {};
+    var summary = cachedKPIResultData.summary || {};
+    var matrix = cachedKPIResultData.matrixRows || [];
+
+    var periodTag = (meta.filterMonth || 'Bulan_Aktif').replace(/[^a-zA-Z0-9_-]/g, '_');
+    var filename = 'Raport_KPI_Achievement_' + periodTag + '.csv';
+
+    var csvRows = [];
+
+    csvRows.push(['RAPORT KPI ACHIEVEMENT SCORECARD & OPERATIONAL HEALTH']);
+    csvRows.push(['PERUSAHAAN', 'HARDIANSYAH FAM - ATM PROBLEM TICKETING SYSTEM']);
+    csvRows.push(['PERIODE EVALUASI', meta.filterMonth || 'Bulan Aktif']);
+    csvRows.push(['TANGGAL EVALUASI', meta.evaluatedAt || '-']);
+    csvRows.push([]);
+    csvRows.push(['COMPOSITE OPERATIONAL HEALTH INDEX', (summary.compositeHealthScore || 0) + ' / 100']);
+    csvRows.push(['PREDIKAT KINERJA', summary.grade || 'GRADE A (EXCELLENT)']);
+    csvRows.push(['EVALUASI NOC DISPATCHER (BOBOT 30%)', (summary.pilarNOCScore || 0) + '%']);
+    csvRows.push(['EVALUASI FSE LAPANGAN (BOBOT 45%)', (summary.pilarFSEScore || 0) + '%']);
+    csvRows.push(['EVALUASI ADMIN FE REPORT (BOBOT 25%)', (summary.pilarAdminScore || 0) + '%']);
+    csvRows.push([]);
+    csvRows.push(['MATRIKS BOBOT & TRANSPARANSI CAPAIAN KPI']);
+    csvRows.push(['NO', 'INDIKATOR KPI', 'PILAR TIM', 'BOBOT NILAI', 'BENCHMARK TARGET', 'REALISASI AKTUAL', 'CAPAIAN (%)', 'SKOR TERBOBOT', 'STATUS']);
+
+    for (var i = 0; i < matrix.length; i++) {
+      var m = matrix[i];
+      csvRows.push([
+        m.no,
+        m.kpi,
+        m.pilar,
+        m.bobot,
+        m.target,
+        m.actual,
+        m.score,
+        m.weighted,
+        m.status
+      ]);
     }
 
     downloadCSVContent(csvRows, filename);
